@@ -40,7 +40,7 @@ class HeaderMutator{
     }
 
     _garbageToken(headers,key,value){
-        if (key.toLowerCase().includes('authorization')) return [];
+        if (!key.toLowerCase().includes('authorization')) return [];
             const garbageValues = [
                 // Category 1 - wrong values
                 'Bearer fake',
