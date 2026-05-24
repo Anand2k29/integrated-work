@@ -1,5 +1,5 @@
 
-const ParameterMutator = require('./parameterMutator');
+const ParameterMutator = require('./paramMutator');
 const HeaderMutator = require('./headerMutator');
 const MethodMutator = require('./methodMutator');
 const PathMutator = require('./pathMutator');
