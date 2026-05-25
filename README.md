@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 <div align="center">
   
 # 🛡️ Async Execution System
