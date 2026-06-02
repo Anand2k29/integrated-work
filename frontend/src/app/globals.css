@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #020817;
+  --color-foreground: #FFFFFF;
+  --color-card: #0B1220;
+  --color-card-hover: #0F172A;
+  --color-border: #1E293B;
+  --color-primary: #4ADE80;
+  --color-primary-hover: #22C55E;
+  --color-secondary: #94A3B8;
+  --color-muted: #64748B;
+  
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-destructive: #ef4444;
+  --color-info: #3b82f6;
+
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-inter), sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .glow-hover {
+    transition: all 0.3s ease;
+  }
+  .glow-hover:hover {
+    box-shadow: 0 0 20px rgba(74, 222, 128, 0.15);
+    border-color: rgba(74, 222, 128, 0.4);
+    transform: translateY(-2px);
+  }
+  
+  .glass-panel {
+    background: rgba(11, 18, 32, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--color-border);
+  }
+}
