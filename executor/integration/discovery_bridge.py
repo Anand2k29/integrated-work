@@ -26,6 +26,9 @@ class DiscoveryBridge:
         
         if spec_source.startswith("http://") or spec_source.startswith("https://"):
             parser = OpenAPIParser.from_url(spec_source)
+        elif spec_source.strip().startswith("{") or spec_source.strip().startswith("openapi"):
+            # Raw JSON or YAML content passed as string
+            parser = OpenAPIParser.from_content(spec_source, source_name="inline_spec")
         else:
             parser = OpenAPIParser.from_file(spec_source)
             

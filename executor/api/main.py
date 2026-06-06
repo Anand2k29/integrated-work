@@ -38,15 +38,40 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Initializing API and connecting to Redis...")
-    # Pre-initialize Redis pool
-    RedisClient.get_pool()
+    logger.info("Initializing API and checking Redis status...")
+    # Trigger connection check
+    redis_alive = RedisClient.check_redis_alive()
+    if not redis_alive:
+        logger.info("Starting WorkerPoolManager as a background task inside FastAPI process (in-memory dev mode)...")
+        from executor.worker_manager.manager import WorkerPoolManager
+        import asyncio
+        manager = WorkerPoolManager(
+            queue_base_name="tasks:default",
+            min_workers=2,  # Keep it light for in-process local dev
+            max_workers=5,
+            idle_timeout=30
+        )
+        app.state.worker_manager = manager
+        # Start worker manager in background task
+        app.state.worker_task = asyncio.create_task(manager.start())
+    else:
+        logger.info("Production Redis detected. Worker execution must be started externally via run_worker.py")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Shutting down API...")
+    if hasattr(app.state, "worker_manager") and app.state.worker_manager:
+        logger.info("Stopping in-process WorkerPoolManager...")
+        await app.state.worker_manager.stop()
     await RedisClient.close()
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "version": settings.APP_VERSION}
+    redis_alive = RedisClient.check_redis_alive()
+    return {
+        "status": "ok",
+        "version": settings.APP_VERSION,
+        "mode": "standalone_in_memory" if not redis_alive else "distributed",
+        "redis_connected": redis_alive
+    }
+

@@ -1,31 +1,18 @@
 import uuid
 from datetime import datetime, timezone
-<<<<<<< HEAD
 from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Float, Enum, Text
-=======
-from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey, Float, Enum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
->>>>>>> abcfc051e5e420f24edeada950b08e54fa460a1f
 from sqlalchemy.orm import relationship
 import enum
 
 from executor.persistence.database import Base
 
 
-<<<<<<< HEAD
-# ---------------------------------------------------------------------------
-# Cross-database UUID type: uses PostgreSQL UUID natively, falls back to
-# CHAR(36) on SQLite / other dialects.
-# ---------------------------------------------------------------------------
+# Cross-database GUID type: uses PostgreSQL UUID where available, falls back to CHAR(36)
 from sqlalchemy.types import TypeDecorator, CHAR
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 
 class GUID(TypeDecorator):
-    """Platform-independent GUID type.
-    Uses PostgreSQL's UUID column type when available, otherwise stores as
-    CHAR(36).
-    """
     impl = CHAR(36)
     cache_ok = True
 
@@ -37,7 +24,7 @@ class GUID(TypeDecorator):
     def process_bind_param(self, value, dialect):
         if value is not None:
             if isinstance(value, uuid.UUID):
-                return str(value) if dialect.name != "postgresql" else value
+                return value if dialect.name == "postgresql" else str(value)
             return str(value)
         return value
 
@@ -47,8 +34,6 @@ class GUID(TypeDecorator):
         return value
 
 
-=======
->>>>>>> abcfc051e5e420f24edeada950b08e54fa460a1f
 class ScanStatus(str, enum.Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
@@ -79,20 +64,12 @@ def utcnow():
 class Scan(Base):
     __tablename__ = "scans"
 
-<<<<<<< HEAD
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
     target = Column(String(1024), nullable=False)  # Base URL or target
     status = Column(String(50), default=ScanStatus.PENDING.value, index=True)
-    config = Column(JSON, nullable=True)  # JSON works on both PostgreSQL and SQLite
-=======
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(255), nullable=False)
-    target = Column(String(1024), nullable=False)  # Base URL or target
-    status = Column(String(50), default=ScanStatus.PENDING.value, index=True)
-    config = Column(JSONB, nullable=True) # Configuration specific to the scan
->>>>>>> abcfc051e5e420f24edeada950b08e54fa460a1f
-    
+    config = Column(JSON, nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=utcnow)
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
@@ -103,31 +80,21 @@ class Scan(Base):
 class Task(Base):
     __tablename__ = "tasks"
 
-<<<<<<< HEAD
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     scan_id = Column(GUID(), ForeignKey("scans.id", ondelete="CASCADE"), nullable=False, index=True)
-    
+
     method = Column(String(10), nullable=False)  # GET, POST, etc
     url = Column(String(2048), nullable=False)
     headers = Column(JSON, nullable=True)
     payload = Column(JSON, nullable=True)
-=======
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    scan_id = Column(UUID(as_uuid=True), ForeignKey("scans.id", ondelete="CASCADE"), nullable=False, index=True)
-    
-    method = Column(String(10), nullable=False) # GET, POST, etc
-    url = Column(String(2048), nullable=False)
-    headers = Column(JSONB, nullable=True)
-    payload = Column(JSONB, nullable=True)
->>>>>>> abcfc051e5e420f24edeada950b08e54fa460a1f
-    
+
     status = Column(String(50), default=TaskStatus.QUEUED.value, index=True)
     attempts = Column(Integer, default=0)
     max_retries = Column(Integer, default=3)
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
-    
+
     scan = relationship("Scan", back_populates="tasks")
     response = relationship("ScanResponse", back_populates="task", uselist=False, cascade="all, delete-orphan")
 
@@ -135,26 +102,15 @@ class Task(Base):
 class ScanResponse(Base):
     __tablename__ = "scan_responses"
 
-<<<<<<< HEAD
     id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     task_id = Column(GUID(), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, unique=True)
-    
+
     status_code = Column(Integer, nullable=True)
     latency_ms = Column(Float, nullable=True)
     response_headers = Column(JSON, nullable=True)
     response_body = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
-=======
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, unique=True)
-    
-    status_code = Column(Integer, nullable=True)
-    latency_ms = Column(Float, nullable=True)
-    response_headers = Column(JSONB, nullable=True)
-    response_body = Column(String, nullable=True)
-    error_message = Column(String, nullable=True)
->>>>>>> abcfc051e5e420f24edeada950b08e54fa460a1f
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     task = relationship("Task", back_populates="response")
@@ -162,14 +118,10 @@ class ScanResponse(Base):
 
 class Worker(Base):
     __tablename__ = "workers"
-    
-<<<<<<< HEAD
+
     id = Column(String(255), primary_key=True)  # e.g. hostname + pid
-=======
-    id = Column(String(255), primary_key=True) # e.g. hostname + pid
->>>>>>> abcfc051e5e420f24edeada950b08e54fa460a1f
     status = Column(String(50), default=WorkerStatus.ONLINE.value)
     active_tasks = Column(Integer, default=0)
     last_heartbeat = Column(DateTime(timezone=True), default=utcnow)
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow)

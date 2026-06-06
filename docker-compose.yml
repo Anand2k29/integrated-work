@@ -1,18 +1,12 @@
 version: '3.8'
 
 services:
-<<<<<<< HEAD
   # -------------------------------------------------------
   # PostgreSQL Database
   # -------------------------------------------------------
   db:
     image: postgres:15-alpine
-    container_name: trustlayer_db
-=======
-  db:
-    image: postgres:15-alpine
     container_name: async_executor_db
->>>>>>> abcfc051e5e420f24edeada950b08e54fa460a1f
     environment:
       POSTGRES_USER: executor_user
       POSTGRES_PASSWORD: executor_password
@@ -27,24 +21,17 @@ services:
       timeout: 5s
       retries: 5
 
-<<<<<<< HEAD
   # -------------------------------------------------------
   # Redis Queue Broker
   # -------------------------------------------------------
   redis:
     image: redis:7-alpine
-    container_name: trustlayer_redis
-=======
-  redis:
-    image: redis:7-alpine
     container_name: async_executor_redis
->>>>>>> abcfc051e5e420f24edeada950b08e54fa460a1f
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
-<<<<<<< HEAD
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -58,7 +45,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    container_name: trustlayer_api
+    container_name: async_executor_api
     ports:
       - "8000:8000"
     environment:
@@ -87,7 +74,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    container_name: trustlayer_worker
+    container_name: async_executor_worker
     command: ["python", "run_worker.py"]
     environment:
       - DATABASE_URL=postgresql+asyncpg://executor_user:executor_password@db:5432/executor_db
@@ -110,7 +97,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: trustlayer_frontend
+    container_name: async_executor_frontend
     ports:
       - "3000:3000"
     environment:
@@ -125,7 +112,7 @@ services:
   # -------------------------------------------------------
   nginx:
     image: nginx:alpine
-    container_name: trustlayer_nginx
+    container_name: async_executor_nginx
     ports:
       - "80:80"
     volumes:
@@ -134,8 +121,6 @@ services:
       - frontend
       - api
     restart: unless-stopped
-=======
->>>>>>> abcfc051e5e420f24edeada950b08e54fa460a1f
 
 volumes:
   postgres_data:

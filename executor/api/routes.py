@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List, Dict, Any
 import uuid
+import json
+
 
 from executor.persistence.database import get_db_session
 from executor.persistence.models import Scan, Task, ScanResponse, ScanStatus, TaskStatus
