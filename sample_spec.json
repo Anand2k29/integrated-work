@@ -1,0 +1,57 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Sample API",
+    "version": "1.0.0"
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/users/{userId}": {
+      "get": {
+        "summary": "Get user by ID",
+        "responses": {
+          "200": {
+            "description": "User found"
+          }
+        }
+      }
+    },
+    "/api//users": {
+      "post": {
+        "summary": "Create user",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created"
+          }
+        }
+      }
+    },
+    "/api/admin/config": {
+      "get": {
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Public config"
+          }
+        }
+      }
+    }
+  }
+}
