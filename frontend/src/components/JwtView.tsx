@@ -6,9 +6,7 @@ import { Card } from "./ui/card"
 import { apiService, JWTAnalysisResult } from "@/lib/api"
 
 export function JwtView() {
-  const [tokenInput, setTokenInput] = useState(
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMTAwMiIsImVtYWlsIjoiYWRtaW5AZW50ZXJwcmlzZS5jb20iLCJyb2xlIjoiYWRtaW4iLCJ0ZW5hbnRfaWQiOiJ0ZW5fMDAxNCIsImV4cCI6MTgwMTI4NDAwMH0.dummysig"
-  )
+  const [tokenInput, setTokenInput] = useState("")
   const [result, setResult] = useState<JWTAnalysisResult | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -27,7 +25,8 @@ export function JwtView() {
   }
 
   useEffect(() => {
-    runAnalysis()
+    if (tokenInput.trim()) runAnalysis()
+    else setResult(null)
   }, [tokenInput])
 
   return (

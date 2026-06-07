@@ -16,35 +16,48 @@ export function AsyncExecutionView({ activeScan }: AsyncExecutionViewProps) {
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
   const [scanTasks, setScanTasks] = useState<Task[]>([])
   const [concurrency, setConcurrency] = useState(10)
-  const [workers, setWorkers] = useState<any[]>([])
   const [logs, setLogs] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
 
   // Fetch queue and execution statistics
   const fetchStats = async () => {
     try {
-      const basePromises = [
-        apiService.getQueueStatus(),
-        apiService.getWorkerStatus(),
-        apiService.getExecutionStats()
-      ]
+      const qPromise = apiService.getQueueStatus()
+      const wPromise = apiService.getWorkerStatus()
+      const ePromise = apiService.getExecutionStats()
+      
+      const [qRes, wRes, eRes] = await Promise.allSettled([qPromise, wPromise, ePromise])
+      
+      if (qRes.status === "fulfilled") setQueueStatus(qRes.value)
+      if (wRes.status === "fulfilled") setWorkerStatus(wRes.value)
+      if (eRes.status === "fulfilled") setExecStats(eRes.value)
 
       if (activeScan) {
-        basePromises.push(apiService.getScanProgress(activeScan.id))
-        basePromises.push(apiService.getScanTasks(activeScan.id))
-      }
-
-      const [q, w, e, progress, tasks] = await Promise.all(basePromises)
-      setQueueStatus(q)
-      setWorkerStatus(w)
-      setExecStats(e)
-      if (activeScan) {
-        setScanProgress(progress as ScanProgress)
-        setScanTasks(tasks as Task[])
+        const pPromise = apiService.getScanProgress(activeScan.id)
+        const tPromise = apiService.getScanTasks(activeScan.id)
+        
+        const [pRes, tRes] = await Promise.allSettled([pPromise, tPromise])
+        
+        if (pRes.status === "fulfilled") setScanProgress(pRes.value)
+        if (tRes.status === "fulfilled") {
+          const liveTasks = tRes.value
+          setScanTasks(liveTasks)
+          setLogs(liveTasks.slice(-15).reverse().map(task => {
+            const response = task.response
+            const time = new Date(response?.created_at || task.created_at).toLocaleTimeString()
+            const outcome = response?.status_code ? `HTTP ${response.status_code}` : task.status
+            const error = response?.error_message ? ` - ${response.error_message}` : ""
+            return `[${time}] EXECUTOR: ${task.method} ${task.url} -> ${outcome}${error}`
+          }))
+        }
+      } else {
+        setScanProgress(null)
+        setScanTasks([])
+        setLogs([])
       }
       setLoading(false)
     } catch (err) {
-      console.error(err)
+      console.error("Error fetching execution stats:", err)
     }
   }
 
@@ -54,48 +67,7 @@ export function AsyncExecutionView({ activeScan }: AsyncExecutionViewProps) {
     return () => clearInterval(interval)
   }, [activeScan])
 
-  // Simulate active worker threads lists
-  useEffect(() => {
-    const methods = ["GET", "POST", "PUT", "DELETE"]
-    const endpoints = [
-      "/api/v1/users/me",
-      "/api/v1/payments/refund",
-      "/api/v1/tenant/settings",
-      "/api/v1/billing/invoice/pdf"
-    ]
-
-    const interval = setInterval(() => {
-      const activeCount = workerStatus?.active_workers || 4
-      const nextWorkers = []
-      
-      for (let i = 0; i < activeCount; i++) {
-        const isBusy = Math.random() > 0.3
-        nextWorkers.push({
-          id: `worker-node-${i+1}`,
-          status: isBusy ? "BUSY" : "IDLE",
-          task: isBusy ? {
-            method: methods[Math.floor(Math.random() * methods.length)],
-            url: endpoints[Math.floor(Math.random() * endpoints.length)]
-          } : null,
-          latency: isBusy ? (40 + Math.floor(Math.random() * 80)) : 0
-        })
-      }
-      setWorkers(nextWorkers)
-
-      // Add worker scaling log
-      if (Math.random() > 0.7) {
-        const time = new Date().toLocaleTimeString()
-        setLogs(prev => [
-          `[${time}] WORKER-POOL: Heartbeat verified. Active threads: ${activeCount}/${concurrency}`,
-          `[${time}] WORKER-POOL: Token bucket rate check: 0 tokens restricted`,
-          ...prev
-        ].slice(0, 15))
-      }
-
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [workerStatus, concurrency])
+  const workers = workerStatus?.workers || []
 
   return (
     <div className="space-y-6">
@@ -148,10 +120,10 @@ export function AsyncExecutionView({ activeScan }: AsyncExecutionViewProps) {
           <div>
             <span className="text-[10px] font-bold text-secondary uppercase tracking-widest block">Worker utilization</span>
             <span className="text-3xl font-black text-foreground mt-2 block">
-              {workers.length > 0 ? `${Math.floor((workers.filter(w => w.status === 'BUSY').length / workers.length) * 100)}%` : "0%"}
+              {workerStatus ? `${workerStatus.active_workers}` : "0"}
             </span>
           </div>
-          <span className="text-[10px] text-muted font-bold uppercase tracking-widest mt-4 pt-3 border-t border-border/60">Active vs Total threads</span>
+          <span className="text-[10px] text-muted font-bold uppercase tracking-widest mt-4 pt-3 border-t border-border/60">Active worker heartbeats</span>
         </Card>
 
         <Card className="flex flex-col justify-between">
@@ -186,72 +158,6 @@ export function AsyncExecutionView({ activeScan }: AsyncExecutionViewProps) {
       </div>
 
       {activeScan && scanProgress && (
-        <Card className="grid gap-6 md:grid-cols-3">
-          <div className="md:col-span-2 p-6 bg-slate-50/50 rounded-2xl border border-border/60 shadow-inner flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-extrabold text-foreground text-sm tracking-tight">Scan Execution Progress</h3>
-                <p className="text-xs text-secondary font-medium">Live status for {activeScan.name}</p>
-              </div>
-              <span className="text-[10px] uppercase font-black tracking-widest text-primary bg-primary/10 border border-primary/20 px-3 py-1.5 rounded-xl">
-                {activeScan.status}
-              </span>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div>
-                <div className="flex justify-between text-secondary mb-2 text-[10px] uppercase font-bold tracking-widest">
-                  <span>Completed Tasks</span>
-                  <span>{scanProgress.completed_tasks}/{scanProgress.total_tasks}</span>
-                </div>
-                <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden border border-border/50 shadow-inner">
-                  <div
-                    className="h-2.5 rounded-full bg-primary transition-all duration-500"
-                    style={{ width: `${Math.round((scanProgress.completed_tasks / Math.max(scanProgress.total_tasks, 1)) * 100)}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3 text-[10px]">
-                <div className="bg-white p-3 rounded-xl border border-border/80 shadow-sm">
-                  <span className="block text-secondary font-bold uppercase tracking-widest mb-1">Queued</span>
-                  <span className="font-black text-foreground text-sm">{scanProgress.detailed_stats.QUEUED}</span>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-border/80 shadow-sm">
-                  <span className="block text-secondary font-bold uppercase tracking-widest mb-1">Processing</span>
-                  <span className="font-black text-foreground text-sm">{scanProgress.detailed_stats.PROCESSING}</span>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-border/80 shadow-sm">
-                  <span className="block text-secondary font-bold uppercase tracking-widest mb-1">Retrying</span>
-                  <span className="font-black text-foreground text-sm">{scanProgress.detailed_stats.RETRYING}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-50/50 p-6 rounded-2xl border border-border/60 shadow-inner flex flex-col justify-between text-xs font-semibold">
-            <div>
-              <h3 className="font-extrabold text-foreground text-sm tracking-tight mb-4 pb-2 border-b border-border/60">Scan Pulse Indicators</h3>
-              <div className="space-y-3 text-secondary">
-                <div className="flex justify-between">
-                  <span>Total Failed</span>
-                  <span className="font-extrabold text-destructive">{scanProgress.failed_tasks}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Pending Tasks</span>
-                  <span className="font-extrabold text-foreground">{scanProgress.pending_tasks}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Success Rate</span>
-                  <span className="font-extrabold text-success">{execStats?.rates.success_rate_pct || 0}%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {activeScan && scanProgress && (
         <div className="grid gap-6 md:grid-cols-3">
           <Card className="md:col-span-2">
             <div className="flex justify-between items-center mb-6">
@@ -270,7 +176,7 @@ export function AsyncExecutionView({ activeScan }: AsyncExecutionViewProps) {
                   <span>Completion Percentage</span>
                   <span>{Math.round((scanProgress.completed_tasks / Math.max(scanProgress.total_tasks, 1)) * 100)}%</span>
                 </div>
-                <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden border border-border/50 shadow-inner">
+                <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden border border-border/55 shadow-inner">
                   <div className="h-2.5 rounded-full bg-primary transition-all duration-500" style={{ width: `${Math.round((scanProgress.completed_tasks / Math.max(scanProgress.total_tasks, 1)) * 100)}%` }} />
                 </div>
               </div>
@@ -330,29 +236,17 @@ export function AsyncExecutionView({ activeScan }: AsyncExecutionViewProps) {
             {workers.length === 0 ? (
               <div className="sm:col-span-2 text-center py-12 text-xs text-secondary font-bold uppercase tracking-widest">Awaiting worker heartbeat signals...</div>
             ) : (
-              workers.map((w, idx) => (
+              workers.map((workerId, idx) => (
                 <div key={idx} className="p-4 bg-slate-50/50 border border-border/60 rounded-2xl flex items-center justify-between text-xs shadow-inner transition-all hover:border-primary/20">
                   <div className="space-y-1.5 max-w-[65%]">
-                    <span className="font-black text-foreground block font-mono text-xs">{w.id}</span>
-                    {w.task ? (
-                      <div className="truncate text-[10px] text-secondary font-bold font-mono">
-                        <span className="bg-white border border-border/50 px-1.5 py-0.5 rounded text-[9px] mr-1.5 text-primary">{w.task.method}</span>
-                        {w.task.url}
-                      </div>
-                    ) : (
-                      <span className="text-[10px] text-secondary/60 font-bold block">Sleeping - Queue empty</span>
-                    )}
+                    <span className="font-black text-foreground block font-mono text-xs">{workerId}</span>
+                    <span className="text-[10px] text-secondary/60 font-bold block">Heartbeat observed in Redis</span>
                   </div>
 
                   <div className="text-right space-y-1.5 shrink-0">
-                    <span className={`text-[9px] px-2.5 py-1 rounded-lg font-black uppercase inline-block border shadow-sm ${
-                      w.status === 'BUSY' ? 'bg-amber-100 text-amber-700 border-amber-200 animate-pulse' : 'bg-green-100 text-green-700 border-green-200'
-                    }`}>
-                      {w.status}
+                    <span className="text-[9px] px-2.5 py-1 rounded-lg font-black uppercase inline-block border shadow-sm bg-green-100 text-green-700 border-green-200">
+                      ONLINE
                     </span>
-                    {w.latency > 0 && (
-                      <span className="text-[9px] text-secondary font-bold block">{w.latency}ms</span>
-                    )}
                   </div>
                 </div>
               ))

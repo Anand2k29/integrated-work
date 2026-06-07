@@ -170,6 +170,23 @@ class WorkerEngine:
                 if task:
                     task.status = TaskStatus.PROCESSING.value
                     await session.commit()
+                    
+                    # Publish event
+                    try:
+                        import json
+                        from executor.task_queue.redis_client import RedisClient
+                        redis = RedisClient.get_client()
+                        event = {
+                            "type": "task_status_updated",
+                            "task_id": task_id_str,
+                            "scan_id": str(task.scan_id),
+                            "status": TaskStatus.PROCESSING.value,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "worker_id": self.worker_id
+                        }
+                        await redis.publish(f"scan:{task.scan_id}:events", json.dumps(event))
+                    except Exception as pub_err:
+                        logger.warning(f"Failed to publish status update: {pub_err}")
             except Exception as e:
                 await session.rollback()
                 if isinstance(e, (ValueError, TypeError)):
@@ -185,6 +202,23 @@ class WorkerEngine:
                 if task:
                     task.status = status
                     await session.commit()
+                    
+                    # Publish event
+                    try:
+                        import json
+                        from executor.task_queue.redis_client import RedisClient
+                        redis = RedisClient.get_client()
+                        event = {
+                            "type": "task_status_updated",
+                            "task_id": task_id_str,
+                            "scan_id": str(task.scan_id),
+                            "status": status,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "worker_id": self.worker_id
+                        }
+                        await redis.publish(f"scan:{task.scan_id}:events", json.dumps(event))
+                    except Exception as pub_err:
+                        logger.warning(f"Failed to publish status update: {pub_err}")
             except Exception as e:
                 await session.rollback()
                 if isinstance(e, (ValueError, TypeError)):
@@ -211,6 +245,21 @@ class WorkerEngine:
                 scan.finished_at = datetime.now(timezone.utc)
                 scan.status = ScanStatus.COMPLETED.value if all(s == TaskStatus.SUCCESS.value for s in statuses) else ScanStatus.FAILED.value
                 await session.commit()
+                
+                # Publish event
+                try:
+                    import json
+                    from executor.task_queue.redis_client import RedisClient
+                    redis = RedisClient.get_client()
+                    event = {
+                        "type": "scan_completed",
+                        "scan_id": scan_id_str,
+                        "status": scan.status,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                    await redis.publish(f"scan:{scan_id_str}:events", json.dumps(event))
+                except Exception as pub_err:
+                    logger.warning(f"Failed to publish scan completion event: {pub_err}")
             except Exception as e:
                 await session.rollback()
                 if isinstance(e, (ValueError, TypeError)):
@@ -253,6 +302,25 @@ class WorkerEngine:
                 await session.commit()
 
                 if db_task:
+                    # Publish event to Redis pub/sub
+                    try:
+                        import json
+                        from executor.task_queue.redis_client import RedisClient
+                        redis = RedisClient.get_client()
+                        event = {
+                            "type": "task_completed",
+                            "task_id": task_id_str,
+                            "scan_id": str(db_task.scan_id),
+                            "status": status,
+                            "status_code": status_code,
+                            "latency_ms": latency,
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                            "worker_id": self.worker_id
+                        }
+                        await redis.publish(f"scan:{db_task.scan_id}:events", json.dumps(event))
+                    except Exception as pub_err:
+                        logger.warning(f"Failed to publish task update: {pub_err}")
+
                     await self._evaluate_scan_completion(str(db_task.scan_id))
             except Exception as e:
                 await session.rollback()

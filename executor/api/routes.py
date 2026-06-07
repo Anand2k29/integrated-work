@@ -5,6 +5,7 @@ from sqlalchemy import select, func
 from typing import List, Dict, Any
 import uuid
 import json
+from urllib.parse import urlparse
 
 
 from executor.persistence.database import get_db_session
@@ -166,33 +167,82 @@ async def get_scan_progress(scan_id: uuid.UUID, db: AsyncSession = Depends(get_d
         "detailed_stats": stats
     }
 
+@router.get("/scans/{scan_id}/telemetry", response_model=List[Dict[str, Any]])
+async def get_scan_telemetry(scan_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+    """Return chart-ready telemetry from persisted task responses only."""
+    scan = await db.get(Scan, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    stmt = (
+        select(Task, ScanResponse)
+        .outerjoin(ScanResponse, ScanResponse.task_id == Task.id)
+        .where(Task.scan_id == scan_id)
+        .order_by(Task.created_at.asc())
+    )
+    result = await db.execute(stmt)
+
+    buckets: Dict[str, Dict[str, Any]] = {}
+    for task, response in result.all():
+        timestamp = (response.created_at if response else task.created_at) or datetime.now(timezone.utc)
+        bucket_time = timestamp.replace(second=0, microsecond=0)
+        label = bucket_time.strftime("%H:%M")
+        bucket = buckets.setdefault(label, {"name": label, "requests": 0, "latency_total": 0.0, "latency_count": 0, "failures": 0})
+        if response:
+            bucket["requests"] += 1
+            if response.latency_ms is not None:
+                bucket["latency_total"] += float(response.latency_ms)
+                bucket["latency_count"] += 1
+            if response.error_message or (response.status_code is not None and response.status_code >= 400):
+                bucket["failures"] += 1
+
+    return [
+        {
+            "name": item["name"],
+            "requests": item["requests"],
+            "latency": round(item["latency_total"] / item["latency_count"], 2) if item["latency_count"] else 0,
+            "failures": item["failures"],
+        }
+        for item in buckets.values()
+    ]
+
 from prometheus_client import REGISTRY
 
 @router.get("/workers/status")
 async def get_workers_status():
     """Real-time active/idle state of the pool."""
-    redis = RedisClient.get_client()
-    active_workers = 0
-    async for _ in redis.scan_iter(match="worker:heartbeat:*"):
-        active_workers += 1
+    try:
+        redis = RedisClient.get_client()
+        worker_ids = []
+        async for key in redis.scan_iter(match="worker:heartbeat:*"):
+            if isinstance(key, bytes):
+                key = key.decode("utf-8", errors="replace")
+            worker_ids.append(str(key).replace("worker:heartbeat:", ""))
+        active_workers = len(worker_ids)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Worker heartbeat store unavailable: {e}")
 
     return {
         "active_workers": active_workers,
-        "status": "scaling" if active_workers > 0 else "idle"
+        "status": "scaling" if active_workers > 0 else "idle",
+        "workers": worker_ids,
     }
 
 @router.get("/queue/status")
 async def get_queue_status():
     """Deep inspection of P1-P4 queue depths."""
-    redis = RedisClient.get_client()
-    base_name = "tasks:default"
-    
-    critical = await redis.llen(f"{base_name}:critical")
-    high = await redis.llen(f"{base_name}:high")
-    medium = await redis.llen(f"{base_name}:medium")
-    low = await redis.llen(f"{base_name}:low")
-    delayed = await redis.zcard(f"{base_name}:delayed")
-    dlq = await redis.llen(f"{base_name}:dlq")
+    try:
+        redis = RedisClient.get_client()
+        base_name = "tasks:default"
+        
+        critical = await redis.llen(f"{base_name}:critical")
+        high = await redis.llen(f"{base_name}:high")
+        medium = await redis.llen(f"{base_name}:medium")
+        low = await redis.llen(f"{base_name}:low")
+        delayed = await redis.zcard(f"{base_name}:delayed")
+        dlq = await redis.llen(f"{base_name}:dlq")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Execution queue unavailable: {e}")
     
     return {
         "critical_p1": critical,
@@ -474,4 +524,401 @@ async def compare_responses(payload: Dict[str, Any]):
         "risk_score": 90 if leak_detected else (40 if diff_status else 10),
         "explanation": "Leaked sensitive keys detected when executing request with low-privileged token." if leak_detected else "Responses differ in status code indicating proper authorization control." if diff_status else "Responses are identical."
     }
+
+@router.post("/copilot/query", response_model=Dict[str, Any])
+async def copilot_query(payload: Dict[str, Any], db: AsyncSession = Depends(get_db_session)):
+    """Answer scan questions using persisted scan, task, response, and report data."""
+    question = (payload.get("question") or "").strip()
+    scan_id_raw = payload.get("scan_id")
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+    if not scan_id_raw:
+        return {
+            "answer": "No active scan is selected. Import an API or select a scan before asking for scan-specific analysis.",
+            "evidence": [],
+        }
+
+    try:
+        scan_id = uuid.UUID(str(scan_id_raw))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid scan_id")
+
+    scan = await db.get(Scan, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    tasks = await get_scan_tasks(scan_id, db)
+    progress = await get_scan_progress(scan_id, db)
+    lower = question.lower()
+
+    failed_tasks = [t for t in tasks if t["status"] == TaskStatus.FAILED.value or (t.get("response") and t["response"].get("error_message"))]
+    completed_tasks = [t for t in tasks if t["status"] == TaskStatus.SUCCESS.value]
+    evidence: List[Dict[str, Any]] = []
+
+    report = None
+    if any(key in lower for key in ["critical", "risk", "authorization", "vulnerability", "executive", "summary", "finding", "bola", "idor"]):
+        try:
+            report = await ReportService.generate_report(str(scan_id), db)
+        except Exception:
+            report = None
+
+    if "why" in lower and ("fail" in lower or "error" in lower):
+        if not failed_tasks:
+            return {
+                "answer": f"No failed tasks are recorded for {scan.name}. Completed tasks: {len(completed_tasks)}; pending tasks: {progress['pending_tasks']}.",
+                "evidence": [],
+            }
+        selected = failed_tasks[:5]
+        evidence = [
+            {
+                "method": t["method"],
+                "url": t["url"],
+                "status": t["status"],
+                "status_code": t.get("response", {}).get("status_code") if t.get("response") else None,
+                "error": t.get("response", {}).get("error_message") if t.get("response") else None,
+            }
+            for t in selected
+        ]
+        return {
+            "answer": f"{len(failed_tasks)} task(s) failed in {scan.name}. The most recent evidence shows HTTP errors or executor errors on the listed requests.",
+            "evidence": evidence,
+        }
+
+    if report and any(key in lower for key in ["authorization", "bola", "idor", "privilege", "tenant"]):
+        vulns = [
+            v for v in report.get("vulnerabilities", [])
+            if any(term in (v.get("type", "") + " " + v.get("title", "") + " " + v.get("description", "")).lower() for term in ["bola", "idor", "authorization", "privilege", "tenant"])
+        ]
+        return {
+            "answer": f"{len(vulns)} authorization-related finding(s) are present in the current scan." if vulns else "No authorization findings were detected from the persisted response comparisons for this scan.",
+            "evidence": vulns[:5],
+        }
+
+    if report and any(key in lower for key in ["critical", "most critical", "risk"]):
+        vulns = report.get("vulnerabilities", [])
+        if not vulns:
+            return {
+                "answer": "No vulnerabilities are currently detected from this scan's persisted response comparisons.",
+                "evidence": [],
+            }
+        top = vulns[0]
+        return {
+            "answer": f"The most critical endpoint is {top.get('method')} {top.get('path')} with {top.get('severity')} severity: {top.get('title')}.",
+            "evidence": [top],
+        }
+
+    if report and "executive" in lower:
+        summary = report.get("summary", {})
+        return {
+            "answer": (
+                f"{scan.name} executed {summary.get('total_requests', 0)} request(s) across "
+                f"{summary.get('total_endpoints', 0)} endpoint(s). Findings: "
+                f"{summary.get('critical', 0)} critical, {summary.get('high', 0)} high, "
+                f"{summary.get('medium', 0)} medium, {summary.get('low', 0)} low."
+            ),
+            "evidence": [summary],
+        }
+
+    endpoint_counts: Dict[str, int] = {}
+    for task in tasks:
+        parsed = urlparse(task["url"])
+        endpoint = parsed.path or task["url"]
+        endpoint_counts[endpoint] = endpoint_counts.get(endpoint, 0) + 1
+
+    return {
+        "answer": (
+            f"{scan.name} currently has {progress['total_tasks']} task(s): "
+            f"{progress['completed_tasks']} completed, {progress['failed_tasks']} failed, "
+            f"and {progress['pending_tasks']} pending. Ask about failures, authorization issues, "
+            "critical endpoints, or an executive summary for deeper analysis."
+        ),
+        "evidence": [
+            {"endpoint": endpoint, "requests": count}
+            for endpoint, count in sorted(endpoint_counts.items(), key=lambda item: item[1], reverse=True)[:5]
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Production-grade Live Endpoints
+# ---------------------------------------------------------------------------
+
+@router.delete("/scans/{scan_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_scan(scan_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+    """Delete a scan and cascade delete all its tasks/responses."""
+    scan = await db.get(Scan, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    await db.delete(scan)
+    await db.commit()
+    return None
+
+@router.get("/scans/{scan_id}/timeline", response_model=List[Dict[str, Any]])
+async def get_scan_timeline(scan_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+    """Retrieve time-series latency and failure chart data."""
+    scan = await db.get(Scan, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    stmt = (
+        select(Task, ScanResponse)
+        .outerjoin(ScanResponse, ScanResponse.task_id == Task.id)
+        .where(Task.scan_id == scan_id)
+        .order_by(Task.created_at.asc())
+    )
+    result = await db.execute(stmt)
+
+    # Let's get current queue depth
+    queue_depth = 0
+    try:
+        redis = RedisClient.get_client()
+        base_name = "tasks:default"
+        critical = await redis.llen(f"{base_name}:critical")
+        high = await redis.llen(f"{base_name}:high")
+        medium = await redis.llen(f"{base_name}:medium")
+        low = await redis.llen(f"{base_name}:low")
+        queue_depth = critical + high + medium + low
+    except Exception:
+        pass
+
+    buckets = {}
+    for task, response in result.all():
+        timestamp = (response.created_at if response else task.created_at) or datetime.now(timezone.utc)
+        # 1-minute buckets
+        bucket_time = timestamp.replace(second=0, microsecond=0)
+        label = bucket_time.isoformat()
+        bucket = buckets.setdefault(label, {
+            "timestamp": label, 
+            "requests": 0, 
+            "latency_total": 0.0, 
+            "latency_count": 0, 
+            "failures": 0, 
+            "queue_depth": queue_depth
+        })
+        if response:
+            bucket["requests"] += 1
+            if response.latency_ms is not None:
+                bucket["latency_total"] += float(response.latency_ms)
+                bucket["latency_count"] += 1
+            if response.error_message or (response.status_code is not None and response.status_code >= 400):
+                bucket["failures"] += 1
+
+    return [
+        {
+            "timestamp": item["timestamp"],
+            "requests": item["requests"],
+            "latency": round(item["latency_total"] / item["latency_count"], 2) if item["latency_count"] else 0.0,
+            "failures": item["failures"],
+            "queue_depth": item["queue_depth"]
+        }
+        for item in buckets.values()
+    ]
+
+@router.get("/scans/{scan_id}/vulnerabilities", response_model=List[Dict[str, Any]])
+async def get_scan_vulnerabilities(scan_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+    """Retrieve security vulnerabilities detected in a scan."""
+    try:
+        report = await ReportService.generate_report(str(scan_id), db)
+        return report.get("vulnerabilities", [])
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        return []
+
+@router.get("/scans/{scan_id}/role-swaps", response_model=List[Dict[str, Any]])
+async def get_scan_role_swaps(scan_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+    """Retrieve auth role swapping / bypass results from a scan."""
+    scan = await db.get(Scan, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    # Fetch tasks with responses
+    from sqlalchemy.orm import selectinload
+    stmt_tasks = select(Task).options(selectinload(Task.response)).where(Task.scan_id == scan_id)
+    result_tasks = await db.execute(stmt_tasks)
+    tasks = result_tasks.scalars().all()
+
+    # Group responses by endpoint path + method
+    from collections import defaultdict
+    import jwt
+    from executor.integration.sys_path_setup import setup_paths
+    setup_paths()
+    from diff_engine import compare_responses
+    from models import ScanResponse as TLLScanResponse
+    
+    endpoint_groups = defaultdict(list)
+    for task in tasks:
+        resp = task.response
+        if not resp or resp.status_code is None:
+            continue
+            
+        role = "guest"
+        user_id = "anonymous"
+        token = None
+        if task.headers and "Authorization" in task.headers:
+            token = task.headers["Authorization"].replace("Bearer ", "")
+            try:
+                decoded = jwt.decode(token, options={"verify_signature": False})
+                role = decoded.get("role", "user")
+                user_id = decoded.get("user_id", "unknown")
+            except Exception:
+                pass
+                
+        # Parse body as JSON if possible
+        body_json = None
+        if resp.response_body:
+            try:
+                body_json = json.loads(resp.response_body)
+            except Exception:
+                pass
+
+        # Parse path
+        path = urlparse(task.url).path or task.url
+        key = (task.method, path)
+        
+        tll_resp = TLLScanResponse(
+            endpoint=path,
+            method=task.method,
+            url=task.url,
+            status_code=resp.status_code,
+            headers=resp.response_headers or {},
+            body=resp.response_body,
+            body_json=body_json,
+            user_id=user_id,
+            role=role,
+            token=token,
+            request_headers=task.headers or {},
+            request_body=task.payload if isinstance(task.payload, str) else json.dumps(task.payload) if task.payload else None,
+            latency_ms=resp.latency_ms
+        )
+        endpoint_groups[key].append(tll_resp)
+
+    role_swaps = []
+    for (method, path), responses in endpoint_groups.items():
+        # Find reference role response
+        admins = [r for r in responses if (r.role or "").lower() == "admin"]
+        others = [r for r in responses if (r.role or "").lower() != "admin"]
+        
+        if not admins and len(responses) >= 2:
+            admins = [responses[0]]
+            others = responses[1:]
+            
+        for admin in admins:
+            for other in others:
+                diff = compare_responses(admin, other)
+                bypass = diff.is_anomaly
+                status_str = "Bypass Detected" if bypass else "Enforced"
+                detail = diff.anomaly_reason or f"Access to {path} was properly restricted for role {other.role}."
+                
+                role_swaps.append({
+                    "endpoint": path,
+                    "method": method,
+                    "source_role": admin.role,
+                    "target_role": other.role,
+                    "status": status_str,
+                    "bypass": bypass,
+                    "detail": detail,
+                    "source_status_code": admin.status_code,
+                    "target_status_code": other.status_code
+                })
+                
+    return role_swaps
+
+@router.get("/dashboard/stats", response_model=Dict[str, Any])
+async def get_dashboard_stats(db: AsyncSession = Depends(get_db_session)):
+    """Retrieve global dashboard metrics and recent activity."""
+    stmt_scans = select(Scan)
+    res_scans = await db.execute(stmt_scans)
+    scans = res_scans.scalars().all()
+    
+    total_scans = len(scans)
+    running_scans = sum(1 for s in scans if s.status == "RUNNING")
+    completed_scans = sum(1 for s in scans if s.status == "COMPLETED")
+    failed_scans = sum(1 for s in scans if s.status in ("FAILED", "ERROR"))
+    
+    stmt_tasks = select(Task)
+    res_tasks = await db.execute(stmt_tasks)
+    tasks = res_tasks.scalars().all()
+    
+    unique_endpoints = set()
+    for t in tasks:
+        try:
+            path = urlparse(t.url).path
+            unique_endpoints.add(f"{t.method} {path}")
+        except Exception:
+            unique_endpoints.add(f"{t.method} {t.url}")
+            
+    total_endpoints = len(unique_endpoints)
+    
+    stmt_recent = (
+        select(Task, ScanResponse)
+        .outerjoin(ScanResponse, ScanResponse.task_id == Task.id)
+        .order_by(Task.created_at.desc())
+        .limit(10)
+    )
+    res_recent = await db.execute(stmt_recent)
+    recent_activity = []
+    for t, r in res_recent.all():
+        recent_activity.append({
+            "task_id": str(t.id),
+            "method": t.method,
+            "url": t.url,
+            "status": t.status,
+            "status_code": r.status_code if r else None,
+            "timestamp": (r.created_at if r else t.created_at).isoformat() if (r or t).created_at else datetime.now(timezone.utc).isoformat()
+        })
+        
+    critical_count = 0
+    high_count = 0
+    medium_count = 0
+    low_count = 0
+    
+    for scan in scans:
+        try:
+            report = await ReportService.generate_report(str(scan.id), db)
+            vulns = report.get("vulnerabilities", [])
+            for v in vulns:
+                sev = v.get("severity", "").upper()
+                if sev == "CRITICAL":
+                    critical_count += 1
+                elif sev == "HIGH":
+                    high_count += 1
+                elif sev == "MEDIUM":
+                    medium_count += 1
+                elif sev == "LOW":
+                    low_count += 1
+        except Exception:
+            pass
+            
+    total_vulns = critical_count + high_count + medium_count + low_count
+    
+    security_score = 100 - (critical_count * 15 + high_count * 10 + medium_count * 5 + low_count * 1)
+    security_score = max(0, min(100, security_score))
+    
+    risk_score = 0
+    if critical_count > 0:
+        risk_score = 95
+    elif high_count > 0:
+        risk_score = 75
+    elif medium_count > 0:
+        risk_score = 45
+    elif low_count > 0:
+        risk_score = 15
+        
+    return {
+        "total_scans": total_scans,
+        "running_scans": running_scans,
+        "completed_scans": completed_scans,
+        "failed_scans": failed_scans,
+        "total_endpoints": total_endpoints,
+        "total_vulnerabilities": total_vulns,
+        "critical_count": critical_count,
+        "high_count": high_count,
+        "medium_count": medium_count,
+        "low_count": low_count,
+        "security_score": security_score,
+        "risk_score": risk_score,
+        "recent_activity": recent_activity
+    }
+
 

@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
-import { Shield, Server, Activity, Terminal, GitBranch, ArrowRight, Play, CheckCircle } from "lucide-react"
+import { Activity, Terminal, GitBranch, Play, CheckCircle } from "lucide-react"
 import { Card } from "./ui/card"
 import { apiService, Scan, Task } from "@/lib/api"
 
@@ -20,8 +20,10 @@ export function CrawlerView({ activeScan }: CrawlerViewProps) {
   useEffect(() => {
     const loadTasks = async () => {
       if (!activeScan) {
-        setVisited(["/api/v1/auth/login", "/api/v1/users/me", "/api/v1/items/bulk"])
-        setPending(["/api/v1/payments/refund", "/api/v1/tenant/settings", "/api/v1/billing/invoice/pdf"])
+        setVisited([])
+        setPending([])
+        setLogs([])
+        setCrawlerState("IDLE")
         return
       }
 
@@ -38,64 +40,34 @@ export function CrawlerView({ activeScan }: CrawlerViewProps) {
           .filter(task => task.status === 'QUEUED')
           .map(task => task.url)
 
-        setVisited(visitedUrls.length ? Array.from(new Set(visitedUrls)) : ["/api/v1/auth/login"])
-        setPending(pendingUrls.length ? Array.from(new Set(pendingUrls)) : ["/api/v1/payments/refund", "/api/v1/tenant/settings", "/api/v1/billing/invoice/pdf"])
+        setVisited(Array.from(new Set(visitedUrls)))
+        setPending(Array.from(new Set(pendingUrls)))
+        setCrawlerState(pendingUrls.length > 0 ? "RUNNING" : tasks.length > 0 ? "COMPLETED" : "IDLE")
+        setLogs(tasks.slice(-15).reverse().map(task => {
+          const response = task.response
+          const time = new Date(response?.created_at || task.created_at).toLocaleTimeString()
+          const status = response?.status_code ? `HTTP ${response.status_code}` : task.status
+          const error = response?.error_message ? ` - ${response.error_message}` : ""
+          return `[${time}] CRAWLER: ${task.method} ${task.url} -> ${status}${error}`
+        }))
       } catch (err) {
         console.error('Failed to load scan tasks for crawler', err)
+        setLogs([`[${new Date().toLocaleTimeString()}] CRAWLER: Failed to load live task data.`])
       } finally {
         setLoading(false)
       }
     }
 
     loadTasks()
-  }, [activeScan])
-
-  useEffect(() => {
-    if (crawlerState !== "RUNNING") return
-
-    const interval = setInterval(() => {
-      if (pending.length === 0) {
-        setCrawlerState("COMPLETED")
-        return
-      }
-
-      // Move one item from pending to visited
-      const itemToVisit = pending[0]
-      setPending(prev => prev.slice(1))
-      setVisited(prev => [...prev, itemToVisit])
-
-      // Add a simulated crawler log
-      const time = new Date().toLocaleTimeString()
-      const method = itemToVisit.includes("refund") || itemToVisit.includes("settings") ? "POST" : "GET"
-      setLogs(prev => [
-        `[${time}] CRAWLER: Traversing ${method} ${itemToVisit}`,
-        `[${time}] CRAWLER: Extracted parameters schema successfully`,
-        `[${time}] CRAWLER: Queue depth adjusted - pending tasks list updated`,
-        ...prev
-      ].slice(0, 15))
-
-    }, 4000)
-
+    const interval = setInterval(loadTasks, 3000)
     return () => clearInterval(interval)
-  }, [crawlerState, pending])
+  }, [activeScan])
 
   const triggerRecrawl = () => {
     if (activeScan) {
-      setCrawlerState("RUNNING")
-      setLogs([`[${new Date().toLocaleTimeString()}] CRAWLER: Initializing recrawl session for ${activeScan.name}...`])
+      setLogs([`[${new Date().toLocaleTimeString()}] CRAWLER: Refreshing live task data for ${activeScan.name}.`])
       return
     }
-
-    setVisited(["/api/v1/auth/login"])
-    setPending([
-      "/api/v1/users/me",
-      "/api/v1/payments/refund",
-      "/api/v1/tenant/settings",
-      "/api/v1/billing/invoice/pdf",
-      "/api/v1/items/bulk"
-    ])
-    setCrawlerState("RUNNING")
-    setLogs([`[${new Date().toLocaleTimeString()}] CRAWLER: Initializing recrawl session...`])
   }
 
   return (
@@ -161,7 +133,9 @@ export function CrawlerView({ activeScan }: CrawlerViewProps) {
 
               <div className="flex justify-between items-center bg-white border border-border/80 hover:border-primary/20 p-4 rounded-xl shadow-sm transition-all glow-hover">
                 <span className="uppercase tracking-widest text-[10px]">Max Depth Traversed</span>
-                <span className="text-foreground font-black text-lg">3 <span className="text-muted text-sm">/ 5</span></span>
+                <span className="text-foreground font-black text-lg">{new Set(scanTasks.map(task => {
+                  try { return new URL(task.url).pathname.split('/').filter(Boolean).length } catch { return task.url.split('/').filter(Boolean).length }
+                })).size || 0}</span>
               </div>
             </div>
           </div>
@@ -171,7 +145,7 @@ export function CrawlerView({ activeScan }: CrawlerViewProps) {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary border-2 border-white"></span>
             </span>
-            <span>Autopilot parsing online</span>
+            <span>{activeScan ? `${scanTasks.length} persisted crawler tasks` : "No active scan selected"}</span>
           </div>
         </Card>
 

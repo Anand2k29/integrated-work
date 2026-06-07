@@ -1,9 +1,9 @@
 "use client"
 
-import React, { useState } from "react"
+import React, { useEffect, useState } from "react"
 import { Layers, FileCode, CheckCircle, AlertCircle, Play, Globe, Lock, Unlock, Database, ArrowRight } from "lucide-react"
 import { Card } from "./ui/card"
-import { apiService, Scan } from "@/lib/api"
+import { apiService, Scan, Task } from "@/lib/api"
 
 interface DiscoveryViewProps {
   activeScan: Scan | null;
@@ -11,22 +11,63 @@ interface DiscoveryViewProps {
 }
 
 export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps) {
-  const [specSource, setSpecSource] = useState("mock_spec.json")
-  const [baseUrl, setBaseUrl] = useState(activeScan?.target || "https://api.example.com")
+  const [specSource, setSpecSource] = useState("")
+  const [baseUrl, setBaseUrl] = useState(activeScan?.target || "")
   const [parsing, setParsing] = useState(false)
   const [result, setResult] = useState<any | null>(null)
   const [error, setError] = useState("")
+  const [discoveredEndpoints, setDiscoveredEndpoints] = useState<any[]>([])
 
-  // Discovered mock endpoints to list out
-  const [discoveredEndpoints, setDiscoveredEndpoints] = useState<any[]>([
-    { path: "/api/v1/auth/login", method: "POST", has_auth: false, parameters: 2, type: "Auth/Session" },
-    { path: "/api/v1/users/me", method: "GET", has_auth: true, parameters: 0, type: "User Profile" },
-    { path: "/api/v1/users/{id}", method: "GET", has_auth: true, parameters: 1, type: "User Profile" },
-    { path: "/api/v1/payments/refund", method: "POST", has_auth: true, parameters: 2, type: "Transactions" },
-    { path: "/api/v1/tenant/{tenantId}/settings", method: "GET", has_auth: true, parameters: 1, type: "Tenant Config" },
-    { path: "/api/v1/billing/invoice/pdf", method: "GET", has_auth: true, parameters: 1, type: "Billing Documents" },
-    { path: "/api/v1/items/bulk", method: "PUT", has_auth: true, parameters: 0, type: "Inventory" },
-  ])
+  const endpointType = (path: string) => {
+    const lower = path.toLowerCase()
+    if (lower.includes("auth") || lower.includes("login")) return "Auth/Session"
+    if (lower.includes("tenant")) return "Tenant"
+    if (lower.includes("payment") || lower.includes("billing") || lower.includes("invoice")) return "Financial"
+    if (lower.includes("user") || lower.includes("profile")) return "Identity"
+    return "API Route"
+  }
+
+  const taskToEndpoint = (task: Task) => {
+    let path = task.url
+    try {
+      path = new URL(task.url).pathname
+    } catch {
+      // Task URLs can be relative for manual entries.
+    }
+    const headers = task.headers || {}
+    const payloadParams = task.payload && typeof task.payload === "object" ? Object.keys(task.payload).length : 0
+    return {
+      path,
+      method: task.method,
+      has_auth: Boolean(headers.Authorization || headers.authorization || headers["X-API-Key"]),
+      parameters: payloadParams,
+      type: endpointType(path),
+    }
+  }
+
+  const loadDiscoveredEndpoints = async () => {
+    if (!activeScan) {
+      setDiscoveredEndpoints([])
+      return
+    }
+    try {
+      const tasks = await apiService.getScanTasks(activeScan.id)
+      const unique = new Map<string, any>()
+      tasks.forEach(task => {
+        const endpoint = taskToEndpoint(task)
+        unique.set(`${endpoint.method}:${endpoint.path}`, endpoint)
+      })
+      setDiscoveredEndpoints(Array.from(unique.values()))
+    } catch (err: any) {
+      setError(err.message || "Failed to load discovered endpoints.")
+      setDiscoveredEndpoints([])
+    }
+  }
+
+  useEffect(() => {
+    setBaseUrl(activeScan?.target || "")
+    loadDiscoveredEndpoints()
+  }, [activeScan])
 
   const handleParse = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -42,12 +83,9 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
     try {
       const resp = await apiService.runDiscovery(activeScan.id, specSource, baseUrl)
       setResult(resp)
-      
-      // Simulate discovering endpoint mappings
-      setTimeout(() => {
-        setParsing(false)
-        onRefreshScan()
-      }, 1000)
+      await loadDiscoveredEndpoints()
+      onRefreshScan()
+      setParsing(false)
     } catch (err: any) {
       setError(err.message || "Failed to trigger discovery engine.")
       setParsing(false)
@@ -89,7 +127,7 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
                 type="text"
                 value={specSource}
                 onChange={(e) => setSpecSource(e.target.value)}
-                placeholder="mock_spec.json or http://..."
+                placeholder="Swagger/OpenAPI URL, JSON/YAML path, or Postman collection"
                 className="w-full p-3.5 border border-border/80 rounded-xl bg-slate-50 font-mono text-xs focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner placeholder:text-muted"
               />
             </div>
@@ -100,7 +138,7 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
                 type="text"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.example.com"
+                placeholder="https://your-api.example"
                 className="w-full p-3.5 border border-border/80 rounded-xl bg-slate-50 font-mono text-xs focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner placeholder:text-muted"
               />
             </div>
@@ -144,7 +182,11 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
 
           {/* Visual representations of routes as small pills */}
           <div className="flex-1 overflow-y-auto max-h-[360px] space-y-3 pr-2 custom-scrollbar">
-            {discoveredEndpoints.map((ep, idx) => (
+            {discoveredEndpoints.length === 0 ? (
+              <div className="p-10 text-center text-xs text-secondary font-bold uppercase tracking-widest border border-dashed border-border rounded-xl">
+                Import an API to begin testing.
+              </div>
+            ) : discoveredEndpoints.map((ep, idx) => (
               <div key={idx} className="flex items-center justify-between p-3.5 bg-white border border-border/80 hover:border-primary/30 rounded-xl text-xs shadow-sm transition-all glow-hover group">
                 <div className="flex items-center space-x-3.5 max-w-[70%]">
                   <span className={`text-[10px] px-2.5 py-1.5 rounded-lg font-black tracking-widest w-16 text-center shrink-0 uppercase shadow-sm ${
@@ -185,7 +227,11 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
         </h3>
         
         <div className="p-8 bg-gradient-to-br from-slate-50 to-white border border-border/60 rounded-xl flex flex-col items-center justify-center min-h-[220px] relative overflow-hidden shadow-inner">
-          {/* Mock Node graph visual representation */}
+          {discoveredEndpoints.length === 0 ? (
+            <div className="text-xs text-secondary font-bold uppercase tracking-widest relative z-10">
+              No endpoint graph available yet.
+            </div>
+          ) : (
           <div className="flex items-center space-x-12 md:space-x-24 relative z-10">
             <div className="bg-white border-2 border-primary/50 p-4 rounded-2xl shadow-lg shadow-primary/10 text-center z-10 min-w-[100px] hover:border-primary transition-colors cursor-default glow-hover">
               <Globe className="w-6 h-6 text-primary mx-auto mb-2" />
@@ -193,24 +239,22 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
             </div>
 
             <div className="flex flex-col space-y-6">
-              <div className="bg-white border border-border p-3 rounded-2xl shadow-md text-center relative z-10 flex items-center gap-3 hover:border-destructive/30 transition-colors cursor-default glow-hover">
-                <span className="text-xs font-bold text-foreground font-mono">/users</span>
+              {discoveredEndpoints.slice(0, 4).map((ep, idx) => (
+              <div key={`${ep.method}-${ep.path}-${idx}`} className="bg-white border border-border p-3 rounded-2xl shadow-md text-center relative z-10 flex items-center gap-3 hover:border-primary/30 transition-colors cursor-default glow-hover">
+                <span className="text-xs font-bold text-foreground font-mono">{ep.path}</span>
                 <ArrowRight className="w-4 h-4 text-muted" />
-                <span className="text-[10px] font-black text-destructive uppercase tracking-widest font-mono bg-destructive/10 border border-destructive/20 px-2 py-1 rounded-lg shadow-sm">BOLA Target</span>
+                <span className="text-[10px] font-black text-primary uppercase tracking-widest font-mono bg-primary/10 border border-primary/20 px-2 py-1 rounded-lg shadow-sm">{ep.type}</span>
               </div>
-              <div className="bg-white border border-border p-3 rounded-2xl shadow-md text-center relative z-10 flex items-center gap-3 hover:border-warning/30 transition-colors cursor-default glow-hover">
-                <span className="text-xs font-bold text-foreground font-mono">/payments</span>
-                <ArrowRight className="w-4 h-4 text-muted" />
-                <span className="text-[10px] font-black text-warning uppercase tracking-widest font-mono bg-warning/10 border border-warning/20 px-2 py-1 rounded-lg shadow-sm">JWT Target</span>
-              </div>
+              ))}
             </div>
           </div>
+          )}
           
           {/* Visual vector lines connects items */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-30">
+          {discoveredEndpoints.length > 0 && <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-30">
             <path d="M 30% 50% C 40% 50%, 45% 30%, 55% 30%" fill="none" stroke="#3B82F6" strokeWidth="2" strokeDasharray="4 4" className="animate-[dash_2s_linear_infinite]" />
             <path d="M 30% 50% C 40% 50%, 45% 70%, 55% 70%" fill="none" stroke="#3B82F6" strokeWidth="2" strokeDasharray="4 4" className="animate-[dash_2s_linear_infinite]" />
-          </svg>
+          </svg>}
         </div>
       </Card>
     </div>

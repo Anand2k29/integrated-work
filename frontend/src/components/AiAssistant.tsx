@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react"
 import { Send, Bot, User, Sparkles, Code, Terminal, Shield, ArrowUpRight } from "lucide-react"
+import { apiService } from "@/lib/api"
 
 interface Message {
   sender: 'ai' | 'user';
@@ -100,56 +101,24 @@ export function AiAssistant({ currentView, activeScanId }: AiAssistantProps) {
     setInput("")
     setTyping(true)
 
-    // Simulate AI response based on message content
-    setTimeout(() => {
-      let replyText = ""
-      let codeBlock = undefined
-
-      const lower = textToSend.toLowerCase()
-      if (lower.includes('bola') || lower.includes('broken object')) {
-        replyText = "Broken Object Level Authorization (BOLA) occurs when an API endpoint exposes an object ID without verifying authorization. To patch BOLA, ensure all endpoints validate the logged-in user's rights to fetch or update the specific object identifier requested."
-        codeBlock = `// Remediating BOLA in Express / NestJS
-router.get('/api/v1/users/:id', async (req, res) => {
-  const userId = req.params.id;
-  const currentUser = req.user; // Set by authentication middleware
-  
-  // VULNERABLE: Direct database fetch without matching ownership
-  // const user = await User.findById(userId);
-  
-  // SECURE: Enforce authorization check
-  if (currentUser.role !== 'admin' && currentUser.id !== userId) {
-    return res.status(403).json({ error: "Access Denied: Cannot view other profiles" });
-  }
-  
-  const user = await User.findById(userId);
-  res.json(user);
-});`
-      } else if (lower.includes('none') || lower.includes('signature')) {
-        replyText = "JWT Signature Bypass (alg:none) allows an attacker to forge tokens by removing the signature segment and altering the header algorithm parameter. You should explicitly reject 'none' algorithms in your verification middleware."
-        codeBlock = `# Secure JWT Decoding in Python (PyJWT)
-import jwt
-
-# SECURE: Explicitly declare the accepted algorithms.
-# If alg is 'none', decode() raises InvalidAlgorithmError.
-decoded = jwt.decode(
-    token, 
-    key="your-strong-shared-secret", 
-    algorithms=["HS256"]
-)`
-      } else if (lower.includes('remediation') || lower.includes('vulnerability')) {
-        replyText = "Based on the security report, your top vulnerabilities are BOLA (severity CRITICAL) and JWT signature algorithm vulnerabilities. I suggest checking authorization middleware configuration files."
-      } else {
-        replyText = `Understood. I will audit that query for you. In context of the ${currentView.replace('_', ' ')} module, please ensure your endpoints utilize appropriate authorization constraints and token validations. Let me know if you want a code patch template.`
-      }
-
+    try {
+      const result = await apiService.askCopilot(activeScanId, textToSend, currentView)
+      const codeBlock = result.evidence.length > 0 ? JSON.stringify(result.evidence, null, 2) : undefined
       setMessages(prev => [...prev, {
         sender: 'ai',
-        text: replyText,
+        text: result.answer,
         timestamp: new Date(),
         code: codeBlock
       }])
+    } catch (err: any) {
+      setMessages(prev => [...prev, {
+        sender: 'ai',
+        text: err.message || "Copilot could not read live scan data.",
+        timestamp: new Date()
+      }])
+    } finally {
       setTyping(false)
-    }, 1200)
+    }
   }
 
   return (
