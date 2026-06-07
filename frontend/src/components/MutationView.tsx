@@ -11,13 +11,8 @@ interface MutationViewProps {
 
 export function MutationView({ activeScan }: MutationViewProps) {
   const [activeStrategy, setActiveStrategy] = useState("id")
-  const [mutationQueue, setMutationQueue] = useState([
-    { path: "/api/v1/users/{id}", param: "id", original: "1002", mutated: "1003", strategy: "ID Swap", status: "QUEUED", priority: "P4" },
-    { path: "/api/v1/users/{id}", param: "id", original: "1002", mutated: "../admin", strategy: "Path Traversal", status: "PROCESSING", priority: "P4" },
-    { path: "/api/v1/payments/refund", param: "amount", original: "150.00", mutated: "-150.00", strategy: "Integer Overflow", status: "QUEUED", priority: "P4" },
-    { path: "/api/v1/payments/refund", param: "amount", original: "150.00", mutated: "NaN", strategy: "Type Mutation", status: "SUCCESS", priority: "P4" },
-    { path: "/api/v1/tenant/{tenantId}/settings", param: "tenantId", original: "usr_10", mutated: "usr_20", strategy: "Tenant Swap", status: "QUEUED", priority: "P4" },
-  ])
+  const [mutationQueue, setMutationQueue] = useState<any[]>([])
+  const [selectedIndex, setSelectedIndex] = useState<number>(0)
 
   const strategies = [
     { id: "id", name: "ID & BOLA Mutation", desc: "Swaps sequential object identifiers to check for Broken Object Level Authorization checks.", severity: "CRITICAL" },
@@ -28,23 +23,67 @@ export function MutationView({ activeScan }: MutationViewProps) {
 
   useEffect(() => {
     const loadMutationQueue = async () => {
-      if (!activeScan) return
+      if (!activeScan) {
+        setMutationQueue([])
+        return
+      }
 
       try {
         const tasks = await apiService.getScanTasks(activeScan.id)
-        const queue = tasks.map(task => ({
-          path: task.url,
-          param: task.payload ? Object.keys(task.payload)[0] || "payload" : "id",
-          original: task.payload ? JSON.stringify(task.payload).slice(0, 40) : "n/a",
-          mutated: task.payload ? JSON.stringify({ ...task.payload, altered: true }).slice(0, 40) : "Injected role swap",
-          strategy: task.method === 'GET' ? 'ID & BOLA Mutation' : 'JSON Structure',
-          status: task.status,
-          priority: 'P3'
-        }))
+        // Filter tasks that are mutations or have payloads
+        const fuzzTasks = tasks.filter(t => t.payload || t.url.includes("=") || t.method !== "GET")
+        const queue = fuzzTasks.map(task => {
+          let param = "id"
+          let original = "n/a"
+          let mutated = "fuzzed"
+          let original_full: any = "No payload"
+          let mutated_full: any = "No payload"
+          
+          if (task.payload) {
+            const keys = Object.keys(task.payload)
+            param = keys[0] || "body"
+            original = JSON.stringify(task.payload)
+            original_full = task.payload
+            
+            const mutatedPayload = { ...task.payload }
+            if (keys[0]) {
+              mutatedPayload[keys[0]] = typeof mutatedPayload[keys[0]] === "number" 
+                ? -mutatedPayload[keys[0]] 
+                : mutatedPayload[keys[0]] + "_fuzzed"
+            }
+            mutated = JSON.stringify(mutatedPayload)
+            mutated_full = mutatedPayload
+          } else {
+            // URL params
+            const urlParts = task.url.split("?")
+            if (urlParts[1]) {
+              const params = new URLSearchParams(urlParts[1])
+              const keys = Array.from(params.keys())
+              if (keys[0]) {
+                param = keys[0]
+                original = params.get(keys[0]) || ""
+                mutated = original + "_fuzzed"
+                original_full = { [param]: original }
+                mutated_full = { [param]: mutated }
+              }
+            }
+          }
 
-        if (queue.length > 0) {
-          setMutationQueue(queue)
-        }
+          return {
+            path: task.url,
+            param,
+            original,
+            mutated,
+            original_full,
+            mutated_full,
+            strategy: task.method === 'GET' ? 'ID & BOLA Mutation' : 'JSON Structure',
+            status: task.status,
+            priority: 'P3'
+          }
+        })
+
+        setMutationQueue(queue)
+        setSelectedIndex(0)
       } catch (err) {
         console.error('Unable to load mutation queue from active scan', err)
       }
@@ -52,6 +91,8 @@ export function MutationView({ activeScan }: MutationViewProps) {
 
     loadMutationQueue()
   }, [activeScan])
+
+  const selectedItem = mutationQueue[selectedIndex]
 
   return (
     <div className="space-y-6">
@@ -121,42 +162,38 @@ export function MutationView({ activeScan }: MutationViewProps) {
             Active Payload Previews
           </h3>
 
-          <div className="grid md:grid-cols-2 gap-6 text-xs font-medium flex-1">
-            <div className="space-y-3 flex flex-col h-full">
-              <span className="text-secondary font-bold uppercase tracking-widest text-[10px] flex items-center gap-1.5 bg-slate-50 border border-border/60 px-3 py-1.5 rounded-lg w-fit">
-                <Layers className="w-3.5 h-3.5 text-secondary" />
-                Original JSON Body
-              </span>
-              <pre className="flex-1 bg-[#0A0F1C] border border-slate-800 p-5 rounded-2xl font-mono text-[11px] text-slate-300 whitespace-pre overflow-x-auto shadow-inner custom-scrollbar">
-{`{
-  "user_id": 1002,
-  "action": "refund_transaction",
-  "data": {
-    "transaction_id": "tx_99201",
-    "amount": 150.00
-  }
-}`}
-              </pre>
-            </div>
+          {selectedItem ? (
+            <div className="grid md:grid-cols-2 gap-6 text-xs font-medium flex-1">
+              <div className="space-y-3 flex flex-col h-full">
+                <span className="text-secondary font-bold uppercase tracking-widest text-[10px] flex items-center gap-1.5 bg-slate-50 border border-border/60 px-3 py-1.5 rounded-lg w-fit">
+                  <Layers className="w-3.5 h-3.5 text-secondary" />
+                  Original Payload
+                </span>
+                <pre className="flex-1 bg-[#0A0F1C] border border-slate-800 p-5 rounded-2xl font-mono text-[11px] text-slate-300 whitespace-pre overflow-x-auto shadow-inner custom-scrollbar min-h-[150px]">
+                  {typeof selectedItem.original_full === 'object' 
+                    ? JSON.stringify(selectedItem.original_full, null, 2) 
+                    : selectedItem.original_full}
+                </pre>
+              </div>
 
-            <div className="space-y-3 flex flex-col h-full">
-              <span className="text-destructive font-bold uppercase tracking-widest text-[10px] flex items-center gap-1.5 bg-destructive/5 border border-destructive/10 px-3 py-1.5 rounded-lg w-fit">
-                <ShieldAlert className="w-3.5 h-3.5 text-destructive" />
-                Mutated Fuzzing JSON Body
-              </span>
-              <pre className="flex-1 bg-[#0A0F1C] border border-destructive/40 p-5 rounded-2xl font-mono text-[11px] text-destructive-foreground whitespace-pre overflow-x-auto shadow-inner custom-scrollbar relative">
-                <div className="absolute inset-0 bg-destructive/5 pointer-events-none"></div>
-{`{
-  "user_id": "../admin", 
-  "action": "refund_transaction",
-  "data": {
-    "transaction_id": "tx_99201",
-    "amount": -150.00 
-  }
-}`}
-              </pre>
+              <div className="space-y-3 flex flex-col h-full">
+                <span className="text-destructive font-bold uppercase tracking-widest text-[10px] flex items-center gap-1.5 bg-destructive/5 border border-destructive/10 px-3 py-1.5 rounded-lg w-fit">
+                  <ShieldAlert className="w-3.5 h-3.5 text-destructive" />
+                  Mutated Fuzz Payload
+                </span>
+                <pre className="flex-1 bg-[#0A0F1C] border border-destructive/40 p-5 rounded-2xl font-mono text-[11px] text-destructive-foreground whitespace-pre overflow-x-auto shadow-inner custom-scrollbar relative min-h-[150px]">
+                  <div className="absolute inset-0 bg-destructive/5 pointer-events-none"></div>
+                  {typeof selectedItem.mutated_full === 'object' 
+                    ? JSON.stringify(selectedItem.mutated_full, null, 2) 
+                    : selectedItem.mutated_full}
+                </pre>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center border border-dashed border-border rounded-2xl text-xs text-secondary font-bold uppercase tracking-widest p-8">
+              No active payload mutations in the current scan tasks.
+            </div>
+          )}
         </Card>
       </div>
 
@@ -170,41 +207,51 @@ export function MutationView({ activeScan }: MutationViewProps) {
           <span className="text-[11px] bg-primary/10 text-primary px-3 py-1.5 rounded-full font-black tracking-widest uppercase border border-primary/20 shadow-sm">{mutationQueue.length} Mutations In Queue</span>
         </div>
 
-        <div className="overflow-x-auto custom-scrollbar pb-2">
-          <table className="w-full text-left text-xs font-medium">
-            <thead>
-              <tr className="border-b border-border/60 text-secondary font-bold text-[10px] uppercase tracking-widest">
-                <th className="py-3 px-2">Endpoint</th>
-                <th className="py-3 px-2">Target Param</th>
-                <th className="py-3 px-2">Original</th>
-                <th className="py-3 px-2">Mutated Fuzz</th>
-                <th className="py-3 px-2">Strategy</th>
-                <th className="py-3 px-2 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mutationQueue.map((mut, idx) => (
-                <tr key={idx} className="border-b border-border/40 hover:bg-slate-50/50 transition-colors group">
-                  <td className="py-4 px-2 font-mono text-[11px] text-foreground font-semibold truncate max-w-[150px]">{mut.path}</td>
-                  <td className="py-4 px-2 font-bold text-secondary">{mut.param}</td>
-                  <td className="py-4 px-2 font-mono text-[11px] text-muted truncate max-w-[100px]">{mut.original}</td>
-                  <td className="py-4 px-2">
-                    <span className="font-mono text-[11px] text-destructive font-black bg-destructive/10 border border-destructive/20 px-2 py-1 rounded-lg truncate max-w-[150px] inline-block">{mut.mutated}</span>
-                  </td>
-                  <td className="py-4 px-2 text-[11px] font-semibold text-secondary">{mut.strategy}</td>
-                  <td className="py-4 px-2 text-right">
-                    <span className={`text-[9px] px-2.5 py-1.5 rounded-lg font-black uppercase tracking-widest shadow-sm border ${
-                      mut.status === 'SUCCESS' ? 'bg-success/10 text-success border-success/20' :
-                      mut.status === 'PROCESSING' ? 'bg-primary/10 text-primary border-primary/20 animate-pulse' : 'bg-slate-100 text-secondary border-border/60'
-                    }`}>
-                      {mut.status}
-                    </span>
-                  </td>
+        {mutationQueue.length === 0 ? (
+          <div className="text-center py-16 text-xs text-secondary font-bold uppercase tracking-widest border border-dashed border-2 border-border rounded-2xl">
+            No mutation tasks generated for this scan. Make sure the target API has endpoints with parameters.
+          </div>
+        ) : (
+          <div className="overflow-x-auto custom-scrollbar pb-2">
+            <table className="w-full text-left text-xs font-medium">
+              <thead>
+                <tr className="border-b border-border/60 text-secondary font-bold text-[10px] uppercase tracking-widest">
+                  <th className="py-3 px-2">Endpoint</th>
+                  <th className="py-3 px-2">Target Param</th>
+                  <th className="py-3 px-2">Original</th>
+                  <th className="py-3 px-2">Mutated Fuzz</th>
+                  <th className="py-3 px-2">Strategy</th>
+                  <th className="py-3 px-2 text-right">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {mutationQueue.map((mut, idx) => (
+                  <tr 
+                    key={idx} 
+                    onClick={() => setSelectedIndex(idx)}
+                    className={`border-b border-border/40 hover:bg-slate-50/50 transition-colors group cursor-pointer ${selectedIndex === idx ? 'bg-slate-50 font-bold' : ''}`}
+                  >
+                    <td className="py-4 px-2 font-mono text-[11px] text-foreground font-semibold truncate max-w-[150px]">{mut.path}</td>
+                    <td className="py-4 px-2 font-bold text-secondary">{mut.param}</td>
+                    <td className="py-4 px-2 font-mono text-[11px] text-muted truncate max-w-[100px]">{mut.original}</td>
+                    <td className="py-4 px-2">
+                      <span className="font-mono text-[11px] text-destructive font-black bg-destructive/10 border border-destructive/20 px-2 py-1 rounded-lg truncate max-w-[150px] inline-block">{mut.mutated}</span>
+                    </td>
+                    <td className="py-4 px-2 text-[11px] font-semibold text-secondary">{mut.strategy}</td>
+                    <td className="py-4 px-2 text-right">
+                      <span className={`text-[9px] px-2.5 py-1.5 rounded-lg font-black uppercase tracking-widest shadow-sm border ${
+                        mut.status === 'SUCCESS' ? 'bg-success/10 text-success border-success/20' :
+                        mut.status === 'PROCESSING' ? 'bg-primary/10 text-primary border-primary/20 animate-pulse' : 'bg-slate-100 text-secondary border-border/60'
+                      }`}>
+                        {mut.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   )

@@ -35,6 +35,10 @@ app.mount("/metrics", metrics_app)
 
 # Include Routers
 app.include_router(router)
+from executor.api.copilot_routes import router as copilot_router
+app.include_router(copilot_router)
+from executor.api.sse_routes import router as sse_router
+app.include_router(sse_router)
 
 @app.on_event("startup")
 async def startup_event():

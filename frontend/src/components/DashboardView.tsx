@@ -5,7 +5,7 @@ import { Activity, Shield, Server, AlertTriangle, BarChart2, Radio, Clock, Shiel
 import { MetricCard } from "./dashboard/MetricCard"
 import { Card } from "./ui/card"
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts"
-import { apiService, Scan, QueueStatus, WorkerStatus, ExecutionStats, ScanProgress } from "@/lib/api"
+import { apiService, Scan, QueueStatus, WorkerStatus, ExecutionStats, ScanProgress, TimelinePoint } from "@/lib/api"
 
 interface DashboardViewProps {
   scans: Scan[];
@@ -19,75 +19,70 @@ export function DashboardView({ scans, activeScan, onSelectScan, onNavigate }: D
   const [workerStatus, setWorkerStatus] = useState<WorkerStatus | null>(null)
   const [execStats, setExecStats] = useState<ExecutionStats | null>(null)
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
-  const [chartData, setChartData] = useState<any[]>([])
+  const [chartData, setChartData] = useState<TimelinePoint[]>([])
+  const [report, setReport] = useState<any | null>(null)
+  const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
 
   // Fetch real-time dashboard parameters
   useEffect(() => {
     const fetchData = async () => {
-      try {
-        const promises = [
-          apiService.getQueueStatus(),
-          apiService.getWorkerStatus(),
-          apiService.getExecutionStats()
-        ]
-        if (activeScan) {
-          promises.push(apiService.getScanProgress(activeScan.id))
-        }
+      setLoading(true)
+      setError("")
+      const [q, w, e] = await Promise.allSettled([
+        apiService.getQueueStatus(),
+        apiService.getWorkerStatus(),
+        apiService.getExecutionStats()
+      ])
 
-        const [q, w, e, progress] = await Promise.all(promises)
-        setQueueStatus(q)
-        setWorkerStatus(w)
-        setExecStats(e)
-        if (activeScan) setScanProgress(progress as ScanProgress)
+      if (q.status === "fulfilled") setQueueStatus(q.value)
+      if (w.status === "fulfilled") setWorkerStatus(w.value)
+      if (e.status === "fulfilled") setExecStats(e.value)
+
+      if (!activeScan) {
+        setScanProgress(null)
+        setChartData([])
+        setReport(null)
         setLoading(false)
-      } catch (err) {
-        console.error("Dashboard data load failed", err)
+        return
       }
-    };
+
+      const [progress, tasks, telemetry, reportResult] = await Promise.allSettled([
+        apiService.getScanProgress(activeScan.id),
+        apiService.getScanTasks(activeScan.id),
+        apiService.getScanTimeline(activeScan.id),
+        apiService.getReport(activeScan.id),
+      ])
+
+      if (progress.status === "fulfilled") setScanProgress(progress.value)
+      if (telemetry.status === "fulfilled") setChartData(telemetry.value)
+      if (reportResult.status === "fulfilled") setReport(reportResult.value)
+      if ([q, w, e, progress, tasks, telemetry].some(item => item.status === "rejected")) {
+        setError("Some live dashboard feeds are unavailable. Values shown are limited to successful backend responses.")
+      }
+      setLoading(false)
+    }
 
     fetchData()
     const interval = setInterval(fetchData, 3000)
     return () => clearInterval(interval)
   }, [activeScan])
 
-  // Populate dynamic charting
-  useEffect(() => {
-    const generateChartData = () => {
-      const now = new Date()
-      const data: any[] = []
-      for (let i = 9; i >= 0; i--) {
-        const time = new Date(now.getTime() - i * 60000)
-        data.push({
-          name: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-          requests: 120 + Math.floor(Math.sin((Date.now() - i * 60000) / 10000) * 30) + Math.floor(Math.random() * 20),
-          latency: 45 + Math.floor(Math.cos((Date.now() - i * 60000) / 15000) * 8) + Math.floor(Math.random() * 5),
-          failures: Math.random() > 0.7 ? Math.floor(Math.random() * 3) : 0
-        })
-      }
-      return data
-    }
-
-    setChartData(generateChartData())
-
-    const interval = setInterval(() => {
-      setChartData(prev => {
-        const nextTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        const nextVal = {
-          name: nextTime,
-          requests: 120 + Math.floor(Math.sin(Date.now() / 10000) * 30) + Math.floor(Math.random() * 20),
-          latency: 45 + Math.floor(Math.cos(Date.now() / 15000) * 8) + Math.floor(Math.random() * 5),
-          failures: Math.random() > 0.8 ? Math.floor(Math.random() * 3) : 0
-        }
-        return [...prev.slice(1), nextVal]
-      })
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [])
-
   const activeWorkersCount = workerStatus?.active_workers || 0
   const queueDepth = queueStatus?.total_pending || 0
+  const findings = report?.vulnerabilities || []
+  const severityCounts = report?.summary || { critical: 0, high: 0, medium: 0, low: 0 }
+  const riskScore = Math.min(100, (severityCounts.critical || 0) * 25 + (severityCounts.high || 0) * 15 + (severityCounts.medium || 0) * 8 + (severityCounts.low || 0) * 3)
+  const healthGrade = riskScore >= 80 ? "Grade F" : riskScore >= 60 ? "Grade D" : riskScore >= 35 ? "Grade C" : riskScore > 0 ? "Grade B" : "No findings"
+
+  const formatTimestamp = (tickItem: string) => {
+    try {
+      const date = new Date(tickItem);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    } catch {
+      return tickItem;
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -115,6 +110,7 @@ export function DashboardView({ scans, activeScan, onSelectScan, onNavigate }: D
             }}
             className="text-xs font-bold border border-border rounded-lg px-4 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-sm cursor-pointer min-w-[200px]"
           >
+            {scans.length === 0 && <option value="">No scans executed yet</option>}
             {scans.map(s => (
               <option key={s.id} value={s.id}>{s.name} ({s.status})</option>
             ))}
@@ -122,34 +118,46 @@ export function DashboardView({ scans, activeScan, onSelectScan, onNavigate }: D
         </div>
       </div>
 
+      {error && (
+        <Card className="border-warning/30 bg-warning/5 text-warning text-xs font-bold">
+          {error}
+        </Card>
+      )}
+
       {/* Counters Grid */}
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard 
           title="Active Target Risk Score"
-          value="CRITICAL (88)"
+          value={activeScan ? `${riskScore}` : "No scan"}
           icon={AlertTriangle}
-          description="High density of BOLA & Auth Bypasses."
+          description={findings.length ? `${findings.length} finding(s) generated from scan responses.` : "No vulnerabilities detected from completed responses."}
         />
         <MetricCard 
           title="Queue Depth (P1-P4)"
           value={loading ? "..." : `${queueDepth} Tasks`}
           icon={Activity}
-          trend={{ value: 8, label: "delayed in retries", isPositive: false }}
+          trend={{ value: queueStatus?.delayed_retries || 0, label: "delayed retries", isPositive: false }}
         />
         <MetricCard 
           title="Active Cluster Workers"
           value={loading ? "..." : `${activeWorkersCount} Online`}
           icon={Server}
-          description="Heartbeat scale-out responsive."
+          description={workerStatus ? `Worker heartbeat status: ${workerStatus.status}.` : "Worker heartbeat feed unavailable."}
           highlight={true}
         />
         <MetricCard 
           title="Security Health Grade"
-          value="Grade D"
+          value={healthGrade}
           icon={ShieldCheck}
-          description="4 critical issues require review."
+          description={`${severityCounts.critical || 0} critical, ${severityCounts.high || 0} high, ${severityCounts.medium || 0} medium, ${severityCounts.low || 0} low.`}
         />
       </div>
+
+      {!activeScan && (
+        <Card className="text-center py-16 border-dashed border-2 text-xs text-secondary font-bold uppercase tracking-widest">
+          No scans executed yet. Import an API to begin testing.
+        </Card>
+      )}
 
       {activeScan && scanProgress && (
         <Card className="grid gap-6 md:grid-cols-3 p-1">
@@ -233,6 +241,11 @@ export function DashboardView({ scans, activeScan, onSelectScan, onNavigate }: D
           </div>
 
           <div className="h-72 w-full">
+            {chartData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-xs text-secondary font-bold uppercase tracking-widest border border-dashed border-border rounded-xl">
+                No response telemetry recorded yet.
+              </div>
+            ) : (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
@@ -246,16 +259,17 @@ export function DashboardView({ scans, activeScan, onSelectScan, onNavigate }: D
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} dy={10} />
+                <XAxis dataKey="timestamp" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} dy={10} tickFormatter={formatTimestamp} />
                 <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} dx={-10} />
                 <Tooltip 
                   contentStyle={{ background: '#FFF', border: '1px solid #E2E8F0', borderRadius: '12px', fontSize: '11px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)', fontWeight: 600 }}
                   itemStyle={{ fontWeight: 700 }}
                 />
-                <Area type="monotone" dataKey="requests" stroke="#3B82F6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRequests)" name="Requests/sec" />
+                <Area type="monotone" dataKey="requests" stroke="#3B82F6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRequests)" name="Requests" />
                 <Area type="monotone" dataKey="latency" stroke="#06B6D4" strokeWidth={2.5} fillOpacity={1} fill="url(#colorLatency)" name="Latency (ms)" />
               </AreaChart>
             </ResponsiveContainer>
+            )}
           </div>
         </Card>
 
@@ -316,29 +330,22 @@ export function DashboardView({ scans, activeScan, onSelectScan, onNavigate }: D
           </div>
 
           <div className="space-y-4">
-            <div className="flex items-start justify-between bg-white border border-border hover:border-destructive/30 rounded-2xl p-4 text-xs shadow-sm transition-all glow-hover">
-              <div className="space-y-1.5">
-                <span className="font-black text-foreground">VULN-001: BOLA on User Profiles</span>
-                <p className="text-secondary text-[11px] font-medium leading-relaxed max-w-sm">Object identifiers can be swapped directly via /api/v1/users/&lt;id&gt;.</p>
+            {findings.length === 0 ? (
+              <div className="p-8 text-center text-xs text-secondary font-bold uppercase tracking-widest border border-dashed border-border rounded-2xl">
+                No vulnerabilities detected.
               </div>
-              <span className="bg-destructive/10 text-destructive text-[10px] px-2 py-1 rounded-lg font-black uppercase tracking-widest shrink-0">Critical</span>
-            </div>
-
-            <div className="flex items-start justify-between bg-white border border-border hover:border-destructive/30 rounded-2xl p-4 text-xs shadow-sm transition-all glow-hover">
-              <div className="space-y-1.5">
-                <span className="font-black text-foreground">VULN-002: JWT signature bypass via alg: none</span>
-                <p className="text-secondary text-[11px] font-medium leading-relaxed max-w-sm">Refund gateway accepts cryptographically signature-stripped parameters.</p>
+            ) : findings.slice(0, 3).map((finding: any) => (
+              <div key={finding.id} className="flex items-start justify-between bg-white border border-border hover:border-destructive/30 rounded-2xl p-4 text-xs shadow-sm transition-all glow-hover">
+                <div className="space-y-1.5">
+                  <span className="font-black text-foreground">{finding.id}: {finding.title}</span>
+                  <p className="text-secondary text-[11px] font-medium leading-relaxed max-w-sm">{finding.description}</p>
+                </div>
+                <span className={`text-[10px] px-2 py-1 rounded-lg font-black uppercase tracking-widest shrink-0 ${
+                  finding.severity === 'CRITICAL' ? 'bg-destructive/10 text-destructive' :
+                  finding.severity === 'HIGH' ? 'bg-warning/10 text-warning' : 'bg-info/10 text-info'
+                }`}>{finding.severity}</span>
               </div>
-              <span className="bg-destructive/10 text-destructive text-[10px] px-2 py-1 rounded-lg font-black uppercase tracking-widest shrink-0">Critical</span>
-            </div>
-
-            <div className="flex items-start justify-between bg-white border border-border hover:border-warning/30 rounded-2xl p-4 text-xs shadow-sm transition-all glow-hover">
-              <div className="space-y-1.5">
-                <span className="font-black text-foreground">VULN-003: Leak of internal stack traces</span>
-                <p className="text-secondary text-[11px] font-medium leading-relaxed max-w-sm">Gateway leaks Postgres query syntax debug traces.</p>
-              </div>
-              <span className="bg-warning/10 text-warning text-[10px] px-2 py-1 rounded-lg font-black uppercase tracking-widest shrink-0">Medium</span>
-            </div>
+            ))}
           </div>
         </Card>
 
@@ -358,7 +365,11 @@ export function DashboardView({ scans, activeScan, onSelectScan, onNavigate }: D
           </div>
 
           <div className="space-y-3">
-            {scans.slice(0, 3).map(s => (
+            {scans.length === 0 ? (
+              <div className="p-8 text-center text-xs text-secondary font-bold uppercase tracking-widest border border-dashed border-border rounded-2xl">
+                No scans executed yet.
+              </div>
+            ) : scans.slice(0, 3).map(s => (
               <div 
                 key={s.id} 
                 onClick={() => onSelectScan(s)}

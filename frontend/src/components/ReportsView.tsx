@@ -22,6 +22,8 @@ export function ReportsView({ activeScan }: ReportsViewProps) {
       setReport(res)
       if (res?.vulnerabilities && res.vulnerabilities.length > 0) {
         setActiveIssue(res.vulnerabilities[0])
+      } else {
+        setActiveIssue(null)
       }
     } catch (err) {
       console.error(err)
@@ -62,12 +64,15 @@ export function ReportsView({ activeScan }: ReportsViewProps) {
             <RefreshCw className={`w-3.5 h-3.5 text-primary ${loading ? 'animate-spin' : ''}`} />
             Regenerate Report
           </button>
-          <button
+          {report?.paths?.pdf && <a
+            href={report.paths.pdf}
+            target="_blank"
+            rel="noreferrer"
             className="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-md shadow-primary/10"
           >
             <Download className="w-3.5 h-3.5" />
             Export PDF
-          </button>
+          </a>}
         </div>
       </div>
 
@@ -87,7 +92,11 @@ export function ReportsView({ activeScan }: ReportsViewProps) {
               </h3>
 
               <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1.5 custom-scrollbar">
-                {report.vulnerabilities.map((vuln: any, idx: number) => (
+                {report.vulnerabilities.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-secondary font-bold uppercase tracking-widest border border-dashed border-border rounded-xl">
+                    No vulnerabilities detected.
+                  </div>
+                ) : report.vulnerabilities.map((vuln: any, idx: number) => (
                   <button
                     key={idx}
                     onClick={() => setActiveIssue(vuln)}

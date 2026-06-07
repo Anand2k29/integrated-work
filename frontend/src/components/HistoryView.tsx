@@ -13,14 +13,17 @@ interface HistoryViewProps {
 }
 
 export function HistoryView({ scans, activeScan, onSelectScan, onRefreshScans }: HistoryViewProps) {
-  const [newScanName, setNewScanName] = useState("Corporate Payments Gateway API Audit")
-  const [newScanTarget, setNewScanTarget] = useState("https://payments.enterprise.com/api/v1")
+  const [newScanName, setNewScanName] = useState("")
+  const [newScanTarget, setNewScanTarget] = useState("")
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState("")
 
   const handleCreateScan = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newScanName.trim() || !newScanTarget.trim()) return
+    if (!newScanName.trim() || !newScanTarget.trim()) {
+      setError("Please specify both a scan name and a target API base URL.")
+      return
+    }
 
     setCreating(true)
     setError("")
@@ -31,12 +34,25 @@ export function HistoryView({ scans, activeScan, onSelectScan, onRefreshScans }:
       onRefreshScans()
       
       // Reset form
-      setNewScanName("New API Target Scan")
-      setNewScanTarget("https://")
+      setNewScanName("")
+      setNewScanTarget("")
     } catch (err: any) {
       setError(err.message || "Failed to initialize scan.")
     } finally {
       setCreating(false)
+    }
+  }
+
+  const handleDeleteScan = async (scanId: string) => {
+    if (!confirm("Are you sure you want to delete this scan workspace? This will delete all associated tasks, execution results, and vulnerabilities.")) {
+      return
+    }
+
+    try {
+      await apiService.deleteScan(scanId)
+      onRefreshScans()
+    } catch (err: any) {
+      alert(err.message || "Failed to delete scan workspace.")
     }
   }
 
@@ -120,43 +136,58 @@ export function HistoryView({ scans, activeScan, onSelectScan, onRefreshScans }:
                   <th className="py-3 px-4">Base Endpoint Target</th>
                   <th className="py-3 px-4">Date Created</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Action</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {scans.map((s) => (
-                  <tr 
-                    key={s.id} 
-                    className={`border-b border-border/40 hover:bg-slate-50 transition-all ${activeScan?.id === s.id ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}
-                  >
-                    <td className="py-4 px-4 font-bold text-foreground">
-                      <div className="flex items-center gap-2">
-                        <Shield className="w-4.5 h-4.5 text-primary shrink-0" />
-                        <span>{s.name}</span>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4 font-mono text-[10px] text-secondary truncate max-w-xs">{s.target}</td>
-                    <td className="py-4 px-4 text-secondary/80 font-bold">{new Date(s.created_at).toLocaleDateString()}</td>
-                    <td className="py-4 px-4">
-                      <span className={`text-[9px] px-2.5 py-1 rounded-lg font-black uppercase border shadow-sm ${
-                        s.status === 'RUNNING' ? 'bg-blue-100 text-blue-700 border-blue-200 animate-pulse' :
-                        s.status === 'COMPLETED' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'
-                      }`}>
-                        {s.status}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button 
-                          onClick={() => onSelectScan(s)}
-                          className="text-[10px] bg-white border border-border hover:border-primary/50 text-secondary hover:text-primary px-3 py-1.5 rounded-xl transition-all cursor-pointer font-bold shadow-sm"
-                        >
-                          Select
-                        </button>
-                      </div>
+                {scans.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="text-center py-12 text-xs text-secondary font-bold uppercase tracking-widest border border-dashed border-border rounded-2xl">
+                      No scans executed yet.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  scans.map((s) => (
+                    <tr 
+                      key={s.id} 
+                      className={`border-b border-border/40 hover:bg-slate-50 transition-all ${activeScan?.id === s.id ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}
+                    >
+                      <td className="py-4 px-4 font-bold text-foreground">
+                        <div className="flex items-center gap-2">
+                          <Shield className="w-4.5 h-4.5 text-primary shrink-0" />
+                          <span>{s.name}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 font-mono text-[10px] text-secondary truncate max-w-xs">{s.target}</td>
+                      <td className="py-4 px-4 text-secondary/80 font-bold">{new Date(s.created_at).toLocaleDateString()}</td>
+                      <td className="py-4 px-4">
+                        <span className={`text-[9px] px-2.5 py-1 rounded-lg font-black uppercase border shadow-sm ${
+                          s.status === 'RUNNING' ? 'bg-blue-100 text-blue-700 border-blue-200 animate-pulse' :
+                          s.status === 'COMPLETED' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-red-100 text-red-700 border-red-200'
+                        }`}>
+                          {s.status}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={() => onSelectScan(s)}
+                            className="text-[10px] bg-white border border-border hover:border-primary/50 text-secondary hover:text-primary px-3 py-1.5 rounded-xl transition-all cursor-pointer font-bold shadow-sm"
+                          >
+                            Select
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteScan(s.id)}
+                            className="text-[10px] bg-red-50 border border-red-200 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-xl transition-all cursor-pointer font-bold shadow-sm"
+                            title="Delete scan"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

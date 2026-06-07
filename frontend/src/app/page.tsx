@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { 
   Shield, Layers, GitBranch, Cpu, Key, Users, Server, Split, FileText, 
-  Settings, UserCheck, Activity, Menu, X, LogOut, Sparkles, Terminal, Bell, Globe 
+  Settings, UserCheck, Activity, Menu, X, LogOut, Sparkles, Terminal, Bell, Globe, HelpCircle
 } from "lucide-react"
 
 // Import views
@@ -24,6 +24,7 @@ import { SettingsView } from "@/components/SettingsView"
 import { HistoryView } from "@/components/HistoryView"
 import { UserManagementView } from "@/components/UserManagementView"
 import { ProfileView } from "@/components/ProfileView"
+import { OnboardingTour } from "@/components/OnboardingTour"
 
 import { apiService, Scan } from "@/lib/api"
 
@@ -35,6 +36,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [aiOpen, setAiOpen] = useState(true)
   const [systemAlert, setSystemAlert] = useState<string | null>(null)
+  const [showTour, setShowTour] = useState(false)
 
   // Fetch initial scans list
   const loadScans = async () => {
@@ -52,20 +54,17 @@ export default function App() {
   useEffect(() => {
     if (sessionState === 'console') {
       loadScans()
+      const completed = localStorage.getItem("tll_tour_completed")
+      if (!completed) {
+        setShowTour(true)
+      }
     }
   }, [sessionState])
 
-  // Trigger system notification on BOLA discovery
-  useEffect(() => {
-    if (sessionState !== 'console') return
-
-    const timer = setTimeout(() => {
-      setSystemAlert("ALERT: 2 critical BOLA leaks detected on active target payments gateway.")
-      setTimeout(() => setSystemAlert(null), 8000)
-    }, 15000)
-
-    return () => clearTimeout(timer)
-  }, [sessionState])
+  const handleCloseTour = () => {
+    setShowTour(false)
+    localStorage.setItem("tll_tour_completed", "true")
+  }
 
   // Sidebar menu items
   const menuItems = [
@@ -188,6 +187,15 @@ export default function App() {
           </button>
 
           <button 
+            onClick={() => setShowTour(true)}
+            className="p-2.5 rounded-xl border border-border hover:border-primary/30 text-secondary hover:text-primary bg-white transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold shadow-sm"
+            title="Restart Guided Tour"
+          >
+            <HelpCircle className="w-4.5 h-4.5 text-slate-500" />
+            <span className="hidden sm:inline">Tour</span>
+          </button>
+
+          <button 
             onClick={() => setAiOpen(!aiOpen)}
             className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold shadow-sm ${
               aiOpen ? 'bg-primary/10 border-primary/20 text-primary' : 'bg-white border-border hover:border-primary/30 text-secondary hover:text-primary'
@@ -298,6 +306,14 @@ export default function App() {
           )}
         </AnimatePresence>
       </div>
+
+      {showTour && (
+        <OnboardingTour 
+          currentView={currentView} 
+          onNavigate={setCurrentView} 
+          onClose={handleCloseTour} 
+        />
+      )}
 
       {/* Footer System Telemetry Status Bar */}
       <footer className="bg-white border-t border-border text-secondary py-2.5 px-6 text-[10px] font-bold flex flex-col sm:flex-row justify-between items-center gap-2 select-none z-10 shrink-0">

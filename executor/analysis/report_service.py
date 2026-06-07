@@ -1,6 +1,7 @@
 import logging
 from typing import List
 import json
+from dataclasses import asdict, is_dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -15,6 +16,52 @@ from models import ScanResponse as TLLScanResponse
 logger = logging.getLogger(__name__)
 
 class ReportService:
+    @staticmethod
+    def _issue_to_api_dict(issue):
+        evidence = {
+            "body_similarity": issue.diff.body_similarity,
+            "status_delta": issue.diff.status_delta,
+            "leaked_fields": issue.diff.leaked_fields[:20],
+            "added_fields": issue.diff.added_fields[:20],
+            "removed_fields": issue.diff.removed_fields[:20],
+            "foreign_ids_found": issue.diff.foreign_ids_found[:10],
+            "anomaly_reason": issue.diff.anomaly_reason,
+            "user_a": {
+                "user_id": issue.diff.response_a.user_id,
+                "role": issue.diff.response_a.role,
+                "status": issue.diff.response_a.status_code,
+            },
+            "user_b": {
+                "user_id": issue.diff.response_b.user_id,
+                "role": issue.diff.response_b.role,
+                "status": issue.diff.response_b.status_code,
+            },
+        }
+
+        return {
+            "id": issue.issue_id,
+            "type": issue.issue_type.value,
+            "severity": issue.severity.value,
+            "title": issue.title,
+            "description": issue.description,
+            "path": issue.endpoint,
+            "method": issue.method,
+            "remediation": issue.recommendation,
+            "recommendation": issue.recommendation,
+            "cwe": issue.cwe,
+            "owasp": issue.owasp,
+            "cvss": {
+                "CRITICAL": 9.5,
+                "HIGH": 8.0,
+                "MEDIUM": 5.5,
+                "LOW": 3.0,
+                "INFO": 0.0,
+            }.get(issue.severity.value, 0.0),
+            "impact": issue.diff.anomaly_reason or issue.description,
+            "evidence": evidence,
+            "discovered_at": issue.discovered_at.isoformat(),
+        }
+
     @staticmethod
     async def generate_report(scan_id: str, db: AsyncSession, output_dir: str = "./reports"):
         """
@@ -97,9 +144,28 @@ class ReportService:
         # 5. Flush and Save
         report = collector.flush()
         paths = collector.save(report, output_dir=output_dir)
+        vulnerabilities = [ReportService._issue_to_api_dict(issue) for issue in report.issues]
         
         return {
             "report_id": report.report_id,
+            "scan_id": scan_id,
+            "scan_name": report.scan_name,
+            "target_url": report.target_url,
+            "generated_at": report.created_at.isoformat(),
             "issues_found": report.summary.total_issues,
+            "summary": {
+                "total_endpoints": report.summary.total_endpoints,
+                "total_requests": report.summary.total_requests,
+                "total_issues": report.summary.total_issues,
+                "critical": report.summary.critical_count,
+                "high": report.summary.high_count,
+                "medium": report.summary.medium_count,
+                "low": report.summary.low_count,
+                "info": report.summary.info_count,
+                "duration_seconds": report.summary.duration_seconds,
+                "scan_start": report.summary.scan_start.isoformat() if report.summary.scan_start else None,
+                "scan_end": report.summary.scan_end.isoformat() if report.summary.scan_end else None,
+            },
+            "vulnerabilities": vulnerabilities,
             "paths": paths
         }
