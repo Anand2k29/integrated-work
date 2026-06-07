@@ -34,6 +34,8 @@ class DiscoveryBridge:
             
         result = parser.parse()
         endpoints = result.get("endpoints", [])
+        if not endpoints and result.get("errors_encountered"):
+            raise ValueError("Spec discovery failed: " + "; ".join(result["errors_encountered"][:5]))
         
         logger.info(f"Discovered {len(endpoints)} endpoints from spec.")
         

@@ -98,9 +98,13 @@ async def discover_and_submit(scan_id: uuid.UUID, req: DiscoverRequest, db: Asyn
         raise HTTPException(status_code=404, detail="Scan not found")
         
     base_url = req.base_url or scan.target
-    
+
     # 1. Discover endpoints -> Crawler tasks
-    tasks_with_eps = DiscoveryBridge.generate_tasks_from_spec(req.spec_source, base_url)
+    try:
+        tasks_with_eps = DiscoveryBridge.generate_tasks_from_spec(req.spec_source, base_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     base_tasks = [t[0] for t in tasks_with_eps]
     endpoints_raw = [t[1] for t in tasks_with_eps]
     

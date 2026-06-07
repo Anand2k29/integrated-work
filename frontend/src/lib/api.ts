@@ -1,6 +1,16 @@
 // API Layer for the Async Execution System Frontend
 // Production-grade: NO mock data, NO fallbacks. All data comes from the live backend.
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const apiHost = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "";
+const API_BASE_URL = apiHost
+  ? apiHost.endsWith("/api/v1")
+    ? apiHost
+    : `${apiHost}/api/v1`
+  : "/api/v1";
+
+function buildApiUrl(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
+}
 
 // ---------------------------------------------------------------------------
 // Error Handling
@@ -19,16 +29,48 @@ export class ApiError extends Error {
 }
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
+  let res: Response;
+  try {
+    res = await fetch(url, options);
+  } catch (error: any) {
+    const detail = getNetworkErrorDetail(error);
+    throw new ApiError(0, detail);
+  }
+
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
     try {
       const body = await res.json();
       detail = body.detail || body.message || detail;
-    } catch { /* ignore parse errors */ }
+    } catch {
+      if (res.status === 204) {
+        return {} as T;
+      }
+    }
     throw new ApiError(res.status, detail);
   }
+
+  if (res.status === 204) {
+    return {} as T;
+  }
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    return {} as T;
+  }
+
   return res.json();
+}
+
+function getNetworkErrorDetail(error: any): string {
+  const message = error?.message || String(error) || "Network request failed.";
+  if (message.includes("Failed to fetch")) {
+    return "Unable to connect to the backend. Verify the API server is running, the URL is correct, and CORS is configured.";
+  }
+  if (message.includes("NetworkError")) {
+    return "Network error while contacting the backend. Check your connection and proxy settings.";
+  }
+  return message;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,11 +255,11 @@ export const apiService = {
   // ---- Scans ----
 
   async getScans(): Promise<Scan[]> {
-    return apiFetch<Scan[]>(`${API_BASE_URL}/scans`);
+    return apiFetch<Scan[]>(buildApiUrl('/scans'));
   },
 
   async createScan(name: string, target: string, config: any = {}): Promise<Scan> {
-    return apiFetch<Scan>(`${API_BASE_URL}/scans`, {
+    return apiFetch<Scan>(buildApiUrl('/scans'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, target, config }),
@@ -225,24 +267,24 @@ export const apiService = {
   },
 
   async deleteScan(scanId: string): Promise<void> {
-    const res = await fetch(`${API_BASE_URL}/scans/${scanId}`, { method: 'DELETE' });
+    const res = await fetch(buildApiUrl(`/scans/${scanId}`), { method: 'DELETE' });
     if (!res.ok) {
       throw new ApiError(res.status, 'Failed to delete scan');
     }
   },
 
   async getScanProgress(scanId: string): Promise<ScanProgress> {
-    return apiFetch<ScanProgress>(`${API_BASE_URL}/scans/${scanId}/progress`);
+    return apiFetch<ScanProgress>(buildApiUrl(`/scans/${scanId}/progress`));
   },
 
   async getScanTasks(scanId: string): Promise<Task[]> {
-    return apiFetch<Task[]>(`${API_BASE_URL}/scans/${scanId}/tasks`);
+    return apiFetch<Task[]>(buildApiUrl(`/scans/${scanId}/tasks`));
   },
 
   // ---- Discovery ----
 
   async runDiscovery(scanId: string, specSource: string, baseUrl?: string): Promise<any> {
-    return apiFetch<any>(`${API_BASE_URL}/scans/${scanId}/discover`, {
+    return apiFetch<any>(buildApiUrl(`/scans/${scanId}/discover`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ spec_source: specSource, base_url: baseUrl }),
@@ -252,27 +294,27 @@ export const apiService = {
   // ---- Queue / Workers / Execution ----
 
   async getQueueStatus(): Promise<QueueStatus> {
-    return apiFetch<QueueStatus>(`${API_BASE_URL}/queue/status`);
+    return apiFetch<QueueStatus>(buildApiUrl('/queue/status'));
   },
 
   async getWorkerStatus(): Promise<WorkerStatus> {
-    return apiFetch<WorkerStatus>(`${API_BASE_URL}/workers/status`);
+    return apiFetch<WorkerStatus>(buildApiUrl('/workers/status'));
   },
 
   async getExecutionStats(): Promise<ExecutionStats> {
-    return apiFetch<ExecutionStats>(`${API_BASE_URL}/execution/stats`);
+    return apiFetch<ExecutionStats>(buildApiUrl('/execution/stats'));
   },
 
   // ---- Reports ----
 
   async getReport(scanId: string, format: string = 'json', type: string = 'technical'): Promise<any> {
-    return apiFetch<any>(`${API_BASE_URL}/scans/${scanId}/report?format=${format}&type=${type}`);
+    return apiFetch<any>(buildApiUrl(`/scans/${scanId}/report?format=${encodeURIComponent(format)}&type=${encodeURIComponent(type)}`));
   },
 
   // ---- JWT ----
 
   async analyzeJWT(token: string): Promise<JWTAnalysisResult> {
-    return apiFetch<JWTAnalysisResult>(`${API_BASE_URL}/jwt/analyze`, {
+    return apiFetch<JWTAnalysisResult>(buildApiUrl('/jwt/analyze'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
@@ -282,7 +324,7 @@ export const apiService = {
   // ---- Diff ----
 
   async runDiff(respA: { status_code: number, body: string }, respB: { status_code: number, body: string }): Promise<DiffResult> {
-    return apiFetch<DiffResult>(`${API_BASE_URL}/diff`, {
+    return apiFetch<DiffResult>(buildApiUrl('/diff'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ response_a: respA, response_b: respB }),
@@ -292,31 +334,31 @@ export const apiService = {
   // ---- Dashboard Stats ----
 
   async getDashboardStats(): Promise<DashboardStats> {
-    return apiFetch<DashboardStats>(`${API_BASE_URL}/dashboard/stats`);
+    return apiFetch<DashboardStats>(buildApiUrl('/dashboard/stats'));
   },
 
   // ---- Vulnerabilities ----
 
   async getVulnerabilities(scanId: string): Promise<Vulnerability[]> {
-    return apiFetch<Vulnerability[]>(`${API_BASE_URL}/scans/${scanId}/vulnerabilities`);
+    return apiFetch<Vulnerability[]>(buildApiUrl(`/scans/${scanId}/vulnerabilities`));
   },
 
   // ---- Role Swap Results ----
 
   async getRoleSwapResults(scanId: string): Promise<RoleSwapResult[]> {
-    return apiFetch<RoleSwapResult[]>(`${API_BASE_URL}/scans/${scanId}/role-swaps`);
+    return apiFetch<RoleSwapResult[]>(buildApiUrl(`/scans/${scanId}/role-swaps`));
   },
 
   // ---- Scan Timeline (for live charts) ----
 
   async getScanTimeline(scanId: string): Promise<TimelinePoint[]> {
-    return apiFetch<TimelinePoint[]>(`${API_BASE_URL}/scans/${scanId}/timeline`);
+    return apiFetch<TimelinePoint[]>(buildApiUrl(`/scans/${scanId}/timeline`));
   },
 
   // ---- AI Copilot ----
 
   async askCopilot(scanId: string | undefined, query: string, contextView: string): Promise<CopilotResponse> {
-    return apiFetch<CopilotResponse>(`${API_BASE_URL}/copilot/ask`, {
+    return apiFetch<CopilotResponse>(buildApiUrl('/copilot/ask'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scan_id: scanId, query, context_view: contextView }),
@@ -326,7 +368,7 @@ export const apiService = {
   // ---- SSE Stream Subscription ----
 
   subscribeScanStream(scanId: string, onMessage: (data: any) => void): EventSource {
-    const source = new EventSource(`${API_BASE_URL}/stream/scan/${scanId}`);
+    const source = new EventSource(buildApiUrl(`/stream/scan/${scanId}`));
     source.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);

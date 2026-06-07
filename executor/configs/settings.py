@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
@@ -34,11 +34,20 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
     REDIS_URL: Optional[str] = None
 
+    # CORS & frontend integration
+    CORS_ORIGINS: Optional[str] = None
+
     def __init__(self, **data):
         super().__init__(**data)
         if self.REDIS_URL is None:
             self.REDIS_URL = f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
         
+    @property
+    def cors_origins(self) -> List[str]:
+        if not self.CORS_ORIGINS:
+            return ["*"]
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
     # Worker Configuration
     WORKER_CONCURRENCY: int = 100
     WORKER_HEARTBEAT_INTERVAL: int = 5

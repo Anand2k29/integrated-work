@@ -59,7 +59,7 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
       })
       setDiscoveredEndpoints(Array.from(unique.values()))
     } catch (err: any) {
-      setError(err.message || "Failed to load discovered endpoints.")
+      setError(err.detail || err.message || "Failed to load discovered endpoints.")
       setDiscoveredEndpoints([])
     }
   }
@@ -87,7 +87,7 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
       onRefreshScan()
       setParsing(false)
     } catch (err: any) {
-      setError(err.message || "Failed to trigger discovery engine.")
+      setError(err.detail || err.message || "Failed to trigger discovery engine.")
       setParsing(false)
     }
   }
