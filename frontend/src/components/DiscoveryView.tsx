@@ -57,13 +57,18 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
   return (
     <div className="space-y-6">
       {/* Banner */}
-      <div className="bg-white p-6 rounded-2xl border border-border flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-black tracking-tight text-foreground flex items-center gap-2">
-            <Layers className="w-5 h-5 text-primary" />
+      <div className="bg-gradient-to-r from-white to-slate-50 p-8 rounded-2xl border border-border flex items-center justify-between shadow-sm relative overflow-hidden">
+        {/* Soft decorative gradient */}
+        <div className="absolute -top-10 -right-10 w-48 h-48 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="relative z-10">
+          <h2 className="text-2xl font-black tracking-tight text-foreground flex items-center gap-3">
+            <div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20 shadow-sm">
+              <Layers className="w-6 h-6 text-primary" />
+            </div>
             Endpoint Discovery Engine
           </h2>
-          <p className="text-xs text-muted font-semibold mt-1">
+          <p className="text-sm text-secondary font-medium mt-2">
             Analyze Swagger/OpenAPI files to harvest paths, query parameters, and session requirements.
           </p>
         </div>
@@ -71,95 +76,99 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
 
       <div className="grid gap-6 md:grid-cols-3">
         {/* Spec upload form */}
-        <Card className="md:col-span-1">
-          <h3 className="font-extrabold text-foreground text-sm flex items-center gap-1.5 mb-4 border-b border-border pb-2">
+        <Card className="md:col-span-1 flex flex-col h-full">
+          <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2 mb-6 border-b border-border/60 pb-4 uppercase tracking-wide">
             <FileCode className="w-4 h-4 text-primary" />
-            Parse Specification File
+            Parse Specification
           </h3>
 
-          <form onSubmit={handleParse} className="space-y-4 text-xs">
-            <div className="space-y-1.5">
-              <label className="font-bold text-muted uppercase">Specification Source</label>
+          <form onSubmit={handleParse} className="space-y-5 text-sm flex flex-col flex-1">
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-secondary uppercase tracking-widest block">Specification Source</label>
               <input
                 type="text"
                 value={specSource}
                 onChange={(e) => setSpecSource(e.target.value)}
                 placeholder="mock_spec.json or http://..."
-                className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px]"
+                className="w-full p-3.5 border border-border/80 rounded-xl bg-slate-50 font-mono text-xs focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner placeholder:text-muted"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="font-bold text-muted uppercase">Override Target URL</label>
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-secondary uppercase tracking-widest block">Override Target URL</label>
               <input
                 type="text"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
                 placeholder="https://api.example.com"
-                className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px]"
+                className="w-full p-3.5 border border-border/80 rounded-xl bg-slate-50 font-mono text-xs focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner placeholder:text-muted"
               />
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 flex items-center gap-2">
+              <div className="p-4 bg-destructive/5 border border-destructive/20 rounded-xl text-destructive text-xs font-semibold flex items-center gap-2 shadow-sm">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
             {result && (
-              <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-green-700 flex items-center gap-2">
+              <div className="p-4 bg-success/5 border border-success/20 rounded-xl text-success text-xs font-semibold flex items-center gap-2 shadow-sm">
                 <CheckCircle className="w-4 h-4 shrink-0" />
                 <span>{result.message}</span>
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={parsing || !activeScan}
-              className="w-full py-3 bg-primary hover:bg-primary-hover text-white rounded-xl font-bold shadow-md shadow-primary/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              {parsing ? "Parsing Spec Schema..." : "Discover & Push Queue"}
-              <Play className="w-4 h-4 fill-white" />
-            </button>
+            <div className="mt-auto pt-6 border-t border-border/60">
+              <button
+                type="submit"
+                disabled={parsing || !activeScan}
+                className="w-full py-4 bg-primary hover:bg-primary-hover text-white rounded-xl font-bold shadow-md shadow-primary/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed group"
+              >
+                {parsing ? "Parsing Spec Schema..." : "Discover & Push Queue"}
+                <Play className="w-4 h-4 fill-white group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            </div>
           </form>
         </Card>
 
         {/* Discovery stats & path graphs */}
-        <Card className="md:col-span-2 flex flex-col justify-between">
-          <div className="mb-4 border-b border-border pb-2 flex justify-between items-center">
-            <h3 className="font-extrabold text-foreground text-sm flex items-center gap-1.5">
+        <Card className="md:col-span-2 flex flex-col h-full">
+          <div className="mb-6 border-b border-border/60 pb-4 flex justify-between items-center">
+            <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2 uppercase tracking-wide">
               <Database className="w-4 h-4 text-secondary" />
               Discovered Route Mapping
             </h3>
-            <span className="text-[10px] bg-slate-100 text-muted px-2 py-0.5 rounded font-extrabold">{discoveredEndpoints.length} Routes Identified</span>
+            <span className="text-[11px] bg-primary/10 text-primary px-3 py-1.5 rounded-full font-black tracking-widest uppercase border border-primary/20 shadow-sm">{discoveredEndpoints.length} Routes Identified</span>
           </div>
 
           {/* Visual representations of routes as small pills */}
-          <div className="flex-1 overflow-y-auto max-h-[300px] space-y-2.5">
+          <div className="flex-1 overflow-y-auto max-h-[360px] space-y-3 pr-2 custom-scrollbar">
             {discoveredEndpoints.map((ep, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs">
-                <div className="flex items-center space-x-3 max-w-[70%]">
-                  <span className={`text-[9px] px-2 py-1 rounded font-black w-14 text-center ${
-                    ep.method === 'GET' ? 'bg-blue-100 text-blue-700' :
-                    ep.method === 'POST' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+              <div key={idx} className="flex items-center justify-between p-3.5 bg-white border border-border/80 hover:border-primary/30 rounded-xl text-xs shadow-sm transition-all glow-hover group">
+                <div className="flex items-center space-x-3.5 max-w-[70%]">
+                  <span className={`text-[10px] px-2.5 py-1.5 rounded-lg font-black tracking-widest w-16 text-center shrink-0 uppercase shadow-sm ${
+                    ep.method === 'GET' ? 'bg-info/10 text-info border border-info/20' :
+                    ep.method === 'POST' ? 'bg-success/10 text-success border border-success/20' : 
+                    ep.method === 'PUT' ? 'bg-warning/10 text-warning border border-warning/20' :
+                    'bg-destructive/10 text-destructive border border-destructive/20'
                   }`}>
                     {ep.method}
                   </span>
-                  <span className="font-mono text-foreground truncate">{ep.path}</span>
+                  <span className="font-mono text-foreground font-semibold truncate text-[13px] group-hover:text-primary transition-colors">{ep.path}</span>
                 </div>
                 
                 <div className="flex items-center space-x-4">
-                  <span className="text-[10px] text-muted font-semibold bg-white px-2 py-0.5 rounded border border-border/50">{ep.type}</span>
+                  <span className="text-[10px] text-secondary font-bold uppercase tracking-widest bg-slate-50 px-2.5 py-1 rounded-lg border border-border/60">{ep.type}</span>
                   {ep.has_auth ? (
-                    <div className="flex items-center gap-1 text-red-600 font-bold">
+                    <div className="flex items-center gap-1.5 text-destructive font-bold bg-destructive/5 px-2.5 py-1 rounded-lg border border-destructive/10">
                       <Lock className="w-3.5 h-3.5" />
-                      <span>Auth Required</span>
+                      <span className="text-[10px] uppercase tracking-widest">Auth Req</span>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1 text-green-600 font-bold">
+                    <div className="flex items-center gap-1.5 text-success font-bold bg-success/5 px-2.5 py-1 rounded-lg border border-success/10">
                       <Unlock className="w-3.5 h-3.5" />
-                      <span>Public Route</span>
+                      <span className="text-[10px] uppercase tracking-widest">Public</span>
                     </div>
                   )}
                 </div>
@@ -171,36 +180,36 @@ export function DiscoveryView({ activeScan, onRefreshScan }: DiscoveryViewProps)
 
       {/* Discovery Visualization node line */}
       <Card>
-        <h3 className="font-extrabold text-foreground text-sm mb-4 border-b border-border pb-2">
+        <h3 className="font-extrabold text-foreground text-sm mb-6 border-b border-border/60 pb-4 uppercase tracking-wide">
           Spec Tree Hierarchy Node Graph
         </h3>
         
-        <div className="p-6 bg-slate-50 border border-slate-100 rounded-xl flex flex-col items-center justify-center min-h-[160px] relative overflow-hidden">
+        <div className="p-8 bg-gradient-to-br from-slate-50 to-white border border-border/60 rounded-xl flex flex-col items-center justify-center min-h-[220px] relative overflow-hidden shadow-inner">
           {/* Mock Node graph visual representation */}
-          <div className="flex items-center space-x-8 md:space-x-16 relative z-10">
-            <div className="bg-white border-2 border-primary p-3 rounded-xl shadow text-center z-10">
-              <Globe className="w-5 h-5 text-primary mx-auto mb-1" />
-              <span className="text-[9px] font-extrabold uppercase font-mono">SPEC ROOT</span>
+          <div className="flex items-center space-x-12 md:space-x-24 relative z-10">
+            <div className="bg-white border-2 border-primary/50 p-4 rounded-2xl shadow-lg shadow-primary/10 text-center z-10 min-w-[100px] hover:border-primary transition-colors cursor-default glow-hover">
+              <Globe className="w-6 h-6 text-primary mx-auto mb-2" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-secondary font-mono">ROOT</span>
             </div>
 
-            <div className="flex flex-col space-y-4">
-              <div className="bg-white border border-border p-2.5 rounded-xl shadow text-center relative z-10 flex items-center gap-2">
-                <span className="text-[10px] font-bold font-mono">/users</span>
-                <ArrowRight className="w-3.5 h-3.5 text-muted" />
-                <span className="text-[9px] font-black text-red-600 uppercase font-mono bg-red-50 border border-red-100 px-1 py-0.5 rounded">BOLA TARGET</span>
+            <div className="flex flex-col space-y-6">
+              <div className="bg-white border border-border p-3 rounded-2xl shadow-md text-center relative z-10 flex items-center gap-3 hover:border-destructive/30 transition-colors cursor-default glow-hover">
+                <span className="text-xs font-bold text-foreground font-mono">/users</span>
+                <ArrowRight className="w-4 h-4 text-muted" />
+                <span className="text-[10px] font-black text-destructive uppercase tracking-widest font-mono bg-destructive/10 border border-destructive/20 px-2 py-1 rounded-lg shadow-sm">BOLA Target</span>
               </div>
-              <div className="bg-white border border-border p-2.5 rounded-xl shadow text-center relative z-10 flex items-center gap-2">
-                <span className="text-[10px] font-bold font-mono">/payments</span>
-                <ArrowRight className="w-3.5 h-3.5 text-muted" />
-                <span className="text-[9px] font-black text-amber-600 uppercase font-mono bg-amber-50 border border-amber-100 px-1 py-0.5 rounded">JWT TARGET</span>
+              <div className="bg-white border border-border p-3 rounded-2xl shadow-md text-center relative z-10 flex items-center gap-3 hover:border-warning/30 transition-colors cursor-default glow-hover">
+                <span className="text-xs font-bold text-foreground font-mono">/payments</span>
+                <ArrowRight className="w-4 h-4 text-muted" />
+                <span className="text-[10px] font-black text-warning uppercase tracking-widest font-mono bg-warning/10 border border-warning/20 px-2 py-1 rounded-lg shadow-sm">JWT Target</span>
               </div>
             </div>
           </div>
           
           {/* Visual vector lines connects items */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-20">
-            <line x1="20%" y1="50%" x2="50%" y2="25%" stroke="#2563EB" strokeWidth="2" />
-            <line x1="20%" y1="50%" x2="50%" y2="75%" stroke="#2563EB" strokeWidth="2" />
+          <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-30">
+            <path d="M 30% 50% C 40% 50%, 45% 30%, 55% 30%" fill="none" stroke="#3B82F6" strokeWidth="2" strokeDasharray="4 4" className="animate-[dash_2s_linear_infinite]" />
+            <path d="M 30% 50% C 40% 50%, 45% 70%, 55% 70%" fill="none" stroke="#3B82F6" strokeWidth="2" strokeDasharray="4 4" className="animate-[dash_2s_linear_infinite]" />
           </svg>
         </div>
       </Card>

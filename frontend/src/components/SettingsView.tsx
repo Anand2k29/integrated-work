@@ -35,20 +35,25 @@ export function SettingsView() {
   return (
     <div className="space-y-6">
       {/* Banner */}
-      <div className="bg-white p-6 rounded-2xl border border-border flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-black tracking-tight text-foreground flex items-center gap-2">
-            <Settings className="w-5 h-5 text-primary" />
+      <div className="bg-gradient-to-r from-white to-slate-50 p-8 rounded-2xl border border-border flex items-center justify-between shadow-sm relative overflow-hidden">
+        {/* Soft decorative gradient */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3"></div>
+
+        <div className="relative z-10">
+          <h2 className="text-2xl font-black tracking-tight text-foreground flex items-center gap-3">
+            <div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20 shadow-sm">
+              <Settings className="w-6 h-6 text-primary" />
+            </div>
             Scanner Engine Settings
           </h2>
-          <p className="text-xs text-muted font-semibold mt-1">
+          <p className="text-sm text-secondary font-medium mt-2">
             Configure target environment credentials, database endpoints, queue limits, and rate limiters.
           </p>
         </div>
 
         {saved && (
-          <div className="bg-green-50 border border-green-200 text-green-700 text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5 font-bold animate-pulse">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <div className="bg-green-50 border border-green-200 text-green-700 text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 font-bold animate-pulse shadow-sm z-10">
+            <CheckCircle2 className="w-4 h-4 shrink-0 animate-bounce" />
             Settings saved successfully!
           </div>
         )}
@@ -57,51 +62,51 @@ export function SettingsView() {
       <form onSubmit={handleSave} className="grid gap-6 md:grid-cols-2 text-xs font-semibold">
         {/* Database & Redis */}
         <Card className="space-y-4">
-          <h3 className="font-extrabold text-foreground text-sm flex items-center gap-1.5 mb-2 border-b border-border pb-2">
+          <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2 mb-6 border-b border-border/60 pb-4 uppercase tracking-wide">
             <Database className="w-4 h-4 text-primary" />
             Persistence & Queue Layer
           </h3>
 
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <label className="font-bold text-muted uppercase">DATABASE CONNECTION URL</label>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-secondary uppercase tracking-widest block">DATABASE CONNECTION URL</label>
               <input
                 type="text"
                 value={dbUrl}
                 onChange={(e) => setDbUrl(e.target.value)}
-                className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px] text-foreground"
+                className="w-full p-3 border border-border/80 rounded-xl bg-slate-50 font-mono text-[11px] text-foreground focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner"
               />
             </div>
 
             <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5 col-span-2">
-                <label className="font-bold text-muted uppercase">REDIS HOSTNAME</label>
+              <div className="space-y-2 col-span-2">
+                <label className="text-[10px] font-bold text-secondary uppercase tracking-widest block">REDIS HOSTNAME</label>
                 <input
                   type="text"
                   value={redisHost}
                   onChange={(e) => setRedisHost(e.target.value)}
-                  className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px] text-foreground"
+                  className="w-full p-3 border border-border/80 rounded-xl bg-slate-50 font-mono text-[11px] text-foreground focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="font-bold text-muted uppercase">PORT</label>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-secondary uppercase tracking-widest block text-center">PORT</label>
                 <input
                   type="number"
                   value={redisPort}
                   onChange={(e) => setRedisPort(parseInt(e.target.value))}
-                  className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px] text-foreground text-center"
+                  className="w-full p-3 border border-border/80 rounded-xl bg-slate-50 font-mono text-[11px] text-foreground text-center focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner"
                 />
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="font-bold text-muted uppercase">REDIS LOGICAL DATABASE INDEX</label>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-secondary uppercase tracking-widest block">REDIS LOGICAL DATABASE INDEX</label>
               <input
                 type="number"
                 value={redisDb}
                 onChange={(e) => setRedisDb(parseInt(e.target.value))}
-                className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px] text-foreground"
+                className="w-full p-3 border border-border/80 rounded-xl bg-slate-50 font-mono text-[11px] text-foreground focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner"
               />
             </div>
           </div>
@@ -109,40 +114,40 @@ export function SettingsView() {
 
         {/* Worker settings */}
         <Card className="space-y-4">
-          <h3 className="font-extrabold text-foreground text-sm flex items-center gap-1.5 mb-2 border-b border-border pb-2">
+          <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2 mb-6 border-b border-border/60 pb-4 uppercase tracking-wide">
             <Cpu className="w-4 h-4 text-secondary" />
             Worker Pool Scaling
           </h3>
 
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <label className="font-bold text-muted uppercase">MAX CONCURRENCY LIMIT</label>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-secondary uppercase tracking-widest block">MAX CONCURRENCY LIMIT</label>
               <input
                 type="number"
                 value={maxConcurrency}
                 onChange={(e) => setMaxConcurrency(parseInt(e.target.value))}
-                className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px] text-foreground"
+                className="w-full p-3 border border-border/80 rounded-xl bg-slate-50 font-mono text-[11px] text-foreground focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="font-bold text-muted uppercase">HEARTBEAT INTERVAL (s)</label>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-secondary uppercase tracking-widest block">HEARTBEAT INTERVAL (s)</label>
                 <input
                   type="number"
                   value={heartbeatInterval}
                   onChange={(e) => setHeartbeatInterval(parseInt(e.target.value))}
-                  className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px] text-foreground"
+                  className="w-full p-3 border border-border/80 rounded-xl bg-slate-50 font-mono text-[11px] text-foreground focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner"
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="font-bold text-muted uppercase">WORKER TIMEOUT (s)</label>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-secondary uppercase tracking-widest block">WORKER TIMEOUT (s)</label>
                 <input
                   type="number"
                   value={workerTimeout}
                   onChange={(e) => setWorkerTimeout(parseInt(e.target.value))}
-                  className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px] text-foreground"
+                  className="w-full p-3 border border-border/80 rounded-xl bg-slate-50 font-mono text-[11px] text-foreground focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner"
                 />
               </div>
             </div>
@@ -151,29 +156,29 @@ export function SettingsView() {
 
         {/* Token bucket rate limiter */}
         <Card className="space-y-4">
-          <h3 className="font-extrabold text-foreground text-sm flex items-center gap-1.5 mb-2 border-b border-border pb-2">
+          <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2 mb-6 border-b border-border/60 pb-4 uppercase tracking-wide">
             <ShieldAlert className="w-4 h-4 text-red-500" />
             Rate Limiter (Token Bucket)
           </h3>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <label className="font-bold text-muted uppercase">MAX REQUEST BUCKET CAP</label>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-secondary uppercase tracking-widest block">MAX REQUEST BUCKET CAP</label>
               <input
                 type="number"
                 value={rateLimitMax}
                 onChange={(e) => setRateLimitMax(parseInt(e.target.value))}
-                className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px] text-foreground"
+                className="w-full p-3 border border-border/80 rounded-xl bg-slate-50 font-mono text-[11px] text-foreground focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="font-bold text-muted uppercase">REFILL RATE WINDOW (s)</label>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-secondary uppercase tracking-widest block">REFILL RATE WINDOW (s)</label>
               <input
                 type="number"
                 value={rateLimitWindow}
                 onChange={(e) => setRateLimitWindow(parseInt(e.target.value))}
-                className="w-full p-2.5 border border-border rounded-xl bg-slate-50 font-mono text-[11px] text-foreground"
+                className="w-full p-3 border border-border/80 rounded-xl bg-slate-50 font-mono text-[11px] text-foreground focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner"
               />
             </div>
           </div>

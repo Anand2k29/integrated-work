@@ -57,27 +57,32 @@ export function DiffEngineView() {
   return (
     <div className="space-y-6">
       {/* Banner */}
-      <div className="bg-white p-6 rounded-2xl border border-border flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-black tracking-tight text-foreground flex items-center gap-2">
-            <Split className="w-5 h-5 text-primary" />
+      <div className="bg-gradient-to-r from-white to-slate-50 p-8 rounded-2xl border border-border flex items-center justify-between shadow-sm relative overflow-hidden">
+        {/* Soft decorative gradient */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none -translate-y-1/2 translate-x-1/3"></div>
+
+        <div className="relative z-10">
+          <h2 className="text-2xl font-black tracking-tight text-foreground flex items-center gap-3">
+            <div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20 shadow-sm">
+              <Split className="w-6 h-6 text-primary" />
+            </div>
             Response Diff & Leakage Engine
           </h2>
-          <p className="text-xs text-muted font-semibold mt-1">
+          <p className="text-sm text-secondary font-medium mt-2">
             Compare response body payloads side-by-side to find metadata leaks and BOLA indicators.
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-3 relative z-10">
           <button
             onClick={loadBolaCase}
-            className="text-[10px] bg-red-50 hover:bg-red-100 text-red-700 px-3 py-2 border border-red-200 rounded-xl font-bold transition-all cursor-pointer"
+            className="text-[10px] bg-red-50 hover:bg-red-100/80 text-red-700 px-4 py-2.5 border border-red-200 rounded-xl font-extrabold tracking-wider uppercase transition-all cursor-pointer shadow-sm"
           >
             Load BOLA Case
           </button>
           <button
             onClick={loadSecureCase}
-            className="text-[10px] bg-green-50 hover:bg-green-100 text-green-700 px-3 py-2 border border-green-200 rounded-xl font-bold transition-all cursor-pointer"
+            className="text-[10px] bg-green-50 hover:bg-green-100/80 text-green-700 px-4 py-2.5 border border-green-200 rounded-xl font-extrabold tracking-wider uppercase transition-all cursor-pointer shadow-sm"
           >
             Load Secure Case
           </button>
@@ -88,53 +93,53 @@ export function DiffEngineView() {
       <div className="grid gap-6 md:grid-cols-2">
         {/* Request A */}
         <Card className="space-y-4">
-          <div className="flex justify-between items-center border-b border-border pb-2">
-            <h3 className="font-extrabold text-foreground text-sm flex items-center gap-1.5">
+          <div className="flex justify-between items-center border-b border-border/60 pb-4">
+            <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2 uppercase tracking-wide">
               <FileText className="w-4 h-4 text-primary" />
               Response A (High Privilege User)
             </h3>
-            <div className="flex items-center gap-2 text-xs font-semibold">
-              <span className="text-muted">Status:</span>
+            <div className="flex items-center gap-2.5 text-xs font-bold">
+              <span className="text-secondary">Status:</span>
               <input
                 type="number"
                 value={statusA}
                 onChange={(e) => setStatusA(parseInt(e.target.value))}
-                className="w-14 p-1 border border-border rounded-lg bg-slate-50 font-mono text-[11px] text-center"
+                className="w-16 p-1.5 border border-border/80 rounded-xl bg-slate-50 font-mono text-xs text-center focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-black text-foreground"
               />
             </div>
           </div>
 
           <textarea
-            rows={8}
+            rows={10}
             value={bodyA}
             onChange={(e) => setBodyA(e.target.value)}
-            className="w-full p-3 border border-border rounded-xl bg-slate-50 font-mono text-[10px] focus:outline-none focus:bg-white transition-all leading-normal"
+            className="w-full p-4 border border-border/80 rounded-2xl bg-slate-50 font-mono text-[11px] focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner leading-relaxed resize-none"
           />
         </Card>
 
         {/* Request B */}
         <Card className="space-y-4">
-          <div className="flex justify-between items-center border-b border-border pb-2">
-            <h3 className="font-extrabold text-foreground text-sm flex items-center gap-1.5">
+          <div className="flex justify-between items-center border-b border-border/60 pb-4">
+            <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2 uppercase tracking-wide">
               <FileText className="w-4 h-4 text-secondary" />
               Response B (Low Privilege User)
             </h3>
-            <div className="flex items-center gap-2 text-xs font-semibold">
-              <span className="text-muted">Status:</span>
+            <div className="flex items-center gap-2.5 text-xs font-bold">
+              <span className="text-secondary">Status:</span>
               <input
                 type="number"
                 value={statusB}
                 onChange={(e) => setStatusB(parseInt(e.target.value))}
-                className="w-14 p-1 border border-border rounded-lg bg-slate-50 font-mono text-[11px] text-center"
+                className="w-16 p-1.5 border border-border/80 rounded-xl bg-slate-50 font-mono text-xs text-center focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-black text-foreground"
               />
             </div>
           </div>
 
           <textarea
-            rows={8}
+            rows={10}
             value={bodyB}
             onChange={(e) => setBodyB(e.target.value)}
-            className="w-full p-3 border border-border rounded-xl bg-slate-50 font-mono text-[10px] focus:outline-none focus:bg-white transition-all leading-normal"
+            className="w-full p-4 border border-border/80 rounded-2xl bg-slate-50 font-mono text-[11px] focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner leading-relaxed resize-none"
           />
         </Card>
       </div>
@@ -144,7 +149,7 @@ export function DiffEngineView() {
         <button
           onClick={handleRunDiff}
           disabled={loading}
-          className="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-8 py-3.5 rounded-xl transition-all shadow-md shadow-primary/10 cursor-pointer flex items-center gap-1.5"
+          className="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-8 py-3.5 rounded-xl transition-all shadow-md shadow-primary/10 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
         >
           {loading ? "Calculating Diff Metrics..." : "Run Diff Audit"}
           <ArrowRight className="w-4 h-4" />
@@ -157,17 +162,17 @@ export function DiffEngineView() {
           {/* Risk Card */}
           <Card className="md:col-span-1 flex flex-col justify-between">
             <div>
-              <h3 className="font-extrabold text-foreground text-sm flex items-center gap-1.5 mb-4 border-b border-border pb-2">
+              <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2 mb-6 border-b border-border/60 pb-4 uppercase tracking-wide">
                 <ShieldAlert className="w-4 h-4 text-primary" />
                 Diff Assessment
               </h3>
 
-              <div className="text-center py-6 space-y-2">
-                <span className="text-5xl font-black text-foreground">{diffResult.risk_score}</span>
-                <span className="block text-xs uppercase tracking-wider font-bold text-muted">Vulnerability Score</span>
-                <div className="pt-4">
-                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${
-                    diffResult.leak_detected ? 'bg-red-100 text-red-700 border border-red-200 animate-pulse' : 'bg-green-100 text-green-700 border border-green-200'
+              <div className="text-center py-6 space-y-3 bg-gradient-to-br from-slate-50 to-white border border-border/60 rounded-2xl shadow-inner">
+                <span className="text-5xl font-black text-foreground block">{diffResult.risk_score}</span>
+                <span className="block text-[10px] uppercase tracking-widest font-bold text-secondary">Vulnerability Score</span>
+                <div className="pt-2">
+                  <span className={`inline-block px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border shadow-sm ${
+                    diffResult.leak_detected ? 'bg-destructive/10 text-destructive border-destructive/20 animate-pulse' : 'bg-success/10 text-success border-success/20'
                   }`}>
                     {diffResult.leak_detected ? 'CRITICAL LEAK' : 'AUTHORIZATION SECURE'}
                   </span>
@@ -177,43 +182,45 @@ export function DiffEngineView() {
           </Card>
 
           {/* Details & Explanations */}
-          <Card className="md:col-span-2 space-y-4">
-            <h3 className="font-extrabold text-foreground text-sm flex items-center gap-1.5 mb-2 border-b border-border pb-2">
-              <Sparkles className="w-4 h-4 text-primary" />
-              Copilot Diff Analysis
-            </h3>
+          <Card className="md:col-span-2 flex flex-col justify-between">
+            <div>
+              <h3 className="font-extrabold text-foreground text-sm flex items-center gap-2 mb-6 border-b border-border/60 pb-4 uppercase tracking-wide">
+                <Sparkles className="w-4 h-4 text-primary" />
+                Copilot Diff Analysis
+              </h3>
 
-            <div className="space-y-3 text-xs leading-relaxed">
-              <div className="flex items-center gap-4 bg-slate-50 border border-slate-100 p-3 rounded-xl font-semibold">
-                <div className="flex items-center gap-1">
-                  <span className="text-muted">Status A:</span>
-                  <span className="text-foreground">{diffResult.status_a}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-muted">Status B:</span>
-                  <span className="text-foreground">{diffResult.status_b}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-muted">Status Differs:</span>
-                  <span className={diffResult.status_differs ? "text-green-600 font-bold" : "text-red-600 font-bold"}>
-                    {diffResult.status_differs ? "Yes (Secure)" : "No (Warning)"}
-                  </span>
-                </div>
-              </div>
-
-              {diffResult.leak_detected && (
-                <div className="p-3 bg-red-50 border border-red-100 text-red-800 rounded-xl flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <span className="font-extrabold">{diffResult.leak_type}</span>
-                    <p className="text-[11px] text-red-700 font-medium">Request B (viewer role) fetched matching sensitive data keys as Request A (admin). BOLA vulnerability confirmed.</p>
+              <div className="space-y-4 text-xs font-semibold">
+                <div className="flex flex-wrap items-center gap-4 bg-slate-50 border border-border/55 p-4 rounded-2xl shadow-inner">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-secondary block text-[10px] uppercase font-bold tracking-wider">Status A:</span>
+                    <span className="text-foreground text-xs font-black">{diffResult.status_a}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 border-l border-border pl-4">
+                    <span className="text-secondary block text-[10px] uppercase font-bold tracking-wider">Status B:</span>
+                    <span className="text-foreground text-xs font-black">{diffResult.status_b}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 border-l border-border pl-4">
+                    <span className="text-secondary block text-[10px] uppercase font-bold tracking-wider">Status Differs:</span>
+                    <span className={`text-xs font-black uppercase tracking-wider ${diffResult.status_differs ? "text-success" : "text-destructive"}`}>
+                      {diffResult.status_differs ? "Yes (Secure)" : "No (Warning)"}
+                    </span>
                   </div>
                 </div>
-              )}
 
-              <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl">
-                <span className="text-[9px] font-bold text-slate-500 uppercase block mb-1">AI Explanation</span>
-                <p className="text-slate-700 text-[11px] font-semibold">{diffResult.explanation}</p>
+                {diffResult.leak_detected && (
+                  <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-2xl flex items-start gap-3 shadow-sm">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span className="font-black text-sm block leading-none">{diffResult.leak_type}</span>
+                      <p className="text-[11px] text-destructive/80 font-semibold leading-relaxed">Request B (viewer role) fetched matching sensitive data keys as Request A (admin). BOLA vulnerability confirmed.</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-slate-50 border border-border/55 p-4 rounded-2xl shadow-inner space-y-1">
+                  <span className="text-[9px] font-bold text-secondary uppercase tracking-widest block">AI Explanation</span>
+                  <p className="text-foreground text-[11px] font-semibold leading-relaxed">{diffResult.explanation}</p>
+                </div>
               </div>
             </div>
           </Card>

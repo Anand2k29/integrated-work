@@ -153,67 +153,74 @@ decoded = jwt.decode(
   }
 
   return (
-    <div className="w-80 border-l border-border bg-white flex flex-col h-full shadow-lg">
-      {/* Header */}
-      <div className="p-4 border-b border-border bg-slate-50 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <div className="bg-primary/15 p-1.5 rounded-lg border border-primary/20">
-            <Bot className="w-4 h-4 text-primary" />
+    <div className="w-full h-full bg-white flex flex-col border-none shadow-[0_0_40px_rgba(0,0,0,0.05)] rounded-l-2xl overflow-hidden relative">
+      {/* Premium Header */}
+      <div className="p-4 bg-gradient-to-r from-slate-50 to-white border-b border-border flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="bg-primary/10 p-2 rounded-xl border border-primary/20 shadow-sm relative">
+            <Bot className="w-5 h-5 text-primary" />
+            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-success border-2 border-white"></span>
+            </span>
           </div>
           <div>
-            <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">Security Copilot</h4>
-            <div className="flex items-center gap-1 mt-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-              <span className="text-[10px] text-muted font-medium">Ready</span>
+            <h4 className="text-sm font-bold text-foreground">Security Copilot</h4>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <Sparkles className="w-3 h-3 text-info" />
+              <span className="text-[10px] text-muted font-bold uppercase tracking-widest">Active Assistant</span>
             </div>
           </div>
         </div>
-        <Sparkles className="w-4 h-4 text-primary" />
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto p-5 space-y-6 tech-grid relative">
+        {/* Soft background glow */}
+        <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-32 h-32 bg-info/5 rounded-full blur-3xl pointer-events-none"></div>
+
         {messages.map((msg, idx) => (
-          <div key={idx} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
-            <div className={`flex items-start space-x-2 max-w-[90%]`}>
+          <div key={idx} className={`flex flex-col relative z-10 ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
+            <div className={`flex items-start space-x-3 max-w-[92%]`}>
               {msg.sender === 'ai' && (
-                <div className="bg-slate-100 p-1.5 rounded-lg border border-slate-200 mt-1">
-                  <Bot className="w-3.5 h-3.5 text-primary" />
+                <div className="bg-white p-2 rounded-xl border border-border mt-1 shadow-sm shrink-0">
+                  <Bot className="w-4 h-4 text-primary" />
                 </div>
               )}
-              <div className={`p-3 rounded-2xl text-xs font-medium leading-relaxed ${
+              <div className={`p-3.5 rounded-2xl text-[13px] font-medium leading-relaxed shadow-sm ${
                 msg.sender === 'user'
-                  ? 'bg-primary text-white rounded-tr-none'
-                  : 'bg-slate-50 border border-slate-200 text-foreground rounded-tl-none'
+                  ? 'bg-gradient-to-br from-primary to-primary-hover text-white rounded-tr-none'
+                  : 'bg-white border border-border text-foreground rounded-tl-none'
               }`}>
                 {msg.text}
                 
                 {msg.code && (
-                  <div className="mt-3 bg-slate-900 text-slate-100 p-3 rounded-lg border border-slate-800 font-mono text-[9px] overflow-x-auto whitespace-pre">
-                    <div className="flex justify-between items-center mb-1 text-[8px] text-slate-400 font-bold border-b border-slate-800 pb-1">
-                      <span>REMEDIATION CODE</span>
-                      <Code className="w-3.5 h-3.5" />
+                  <div className="mt-4 bg-[#0A0F1C] text-slate-300 p-4 rounded-xl border border-slate-800 font-mono text-[11px] overflow-x-auto whitespace-pre shadow-inner">
+                    <div className="flex justify-between items-center mb-2.5 text-[9px] text-slate-500 font-bold uppercase tracking-widest border-b border-slate-800/80 pb-2">
+                      <span>Remediation Code</span>
+                      <Code className="w-4 h-4 text-info" />
                     </div>
                     {msg.code}
                   </div>
                 )}
               </div>
             </div>
-            <span className="text-[9px] text-muted mt-1 px-1">
+            <span className="text-[10px] text-muted font-semibold mt-1.5 px-1 uppercase">
               {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           </div>
         ))}
 
         {typing && (
-          <div className="flex items-start space-x-2 max-w-[90%]">
-            <div className="bg-slate-100 p-1.5 rounded-lg border border-slate-200 mt-1">
-              <Bot className="w-3.5 h-3.5 text-primary" />
+          <div className="flex items-start space-x-3 max-w-[90%] relative z-10">
+            <div className="bg-white p-2 rounded-xl border border-border mt-1 shadow-sm shrink-0">
+              <Bot className="w-4 h-4 text-primary" />
             </div>
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl rounded-tl-none text-xs text-muted font-bold flex gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce"></span>
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce delay-150"></span>
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce delay-300"></span>
+            <div className="p-4 bg-white border border-border shadow-sm rounded-2xl rounded-tl-none flex gap-1.5 items-center h-10">
+              <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce"></span>
+              <span className="w-2 h-2 rounded-full bg-primary/80 animate-bounce delay-150"></span>
+              <span className="w-2 h-2 rounded-full bg-primary animate-bounce delay-300"></span>
             </div>
           </div>
         )}
@@ -221,42 +228,42 @@ decoded = jwt.decode(
       </div>
 
       {/* Quick Prompt Suggestions */}
-      <div className="p-3 border-t border-border bg-slate-50 space-y-2">
-        <span className="text-[9px] font-bold uppercase tracking-wider text-muted px-1 block">SUGGESTED QUESTIONS</span>
-        <div className="flex flex-wrap gap-1.5">
+      <div className="p-4 border-t border-border bg-slate-50/50 space-y-3">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-secondary block">Suggested Actions</span>
+        <div className="flex flex-wrap gap-2">
           {getSuggestions().map((s, idx) => (
             <button
               key={idx}
               onClick={() => handleSend(s)}
-              className="text-[10px] bg-white border border-border hover:border-primary/50 text-slate-700 hover:text-primary px-2.5 py-1.5 rounded-lg transition-all text-left truncate max-w-full cursor-pointer flex items-center justify-between gap-1 group font-medium"
+              className="text-[11px] bg-white border border-border hover:border-primary/40 text-secondary hover:text-primary px-3 py-2 rounded-xl transition-all text-left truncate max-w-full cursor-pointer flex items-center justify-between gap-2 group font-semibold shadow-sm glow-hover"
             >
               <span className="truncate">{s}</span>
-              <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-primary shrink-0" />
+              <ArrowUpRight className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 shrink-0 transition-opacity" />
             </button>
           ))}
         </div>
       </div>
 
-      {/* Input */}
+      {/* Input Form */}
       <form
         onSubmit={(e) => {
           e.preventDefault()
           handleSend(input)
         }}
-        className="p-3 border-t border-border flex items-center gap-2"
+        className="p-4 border-t border-border bg-white flex items-center gap-2.5"
       >
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask copilot..."
-          className="flex-1 bg-slate-50 border border-border rounded-xl px-3 py-2.5 text-xs font-semibold focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+          className="flex-1 bg-slate-50 border border-border rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-muted shadow-inner"
         />
         <button
           type="submit"
-          className="bg-primary hover:bg-primary-hover text-white p-2.5 rounded-xl transition-all shadow-md shadow-primary/10 cursor-pointer"
+          className="bg-primary hover:bg-primary-hover text-white p-3 rounded-xl transition-all shadow-md shadow-primary/20 cursor-pointer flex items-center justify-center"
         >
-          <Send className="w-3.5 h-3.5" />
+          <Send className="w-4 h-4" />
         </button>
       </form>
     </div>
