@@ -43,6 +43,20 @@ app.include_router(sse_router)
 @app.on_event("startup")
 async def startup_event():
     logger.info("Initializing API and checking Redis status...")
+
+    # Ensure the database schema exists. This is idempotent (only missing tables
+    # are created) and makes the backend self-sufficient regardless of how it is
+    # launched, so data endpoints never 500 due to a missing schema (the common
+    # cause of "internal error" on /api/v1/scans in fresh environments).
+    try:
+        from executor.persistence.database import engine, Base
+        import executor.persistence.models  # noqa: F401  (register ORM models)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database schema verified/created.")
+    except Exception as e:
+        logger.error(f"Failed to initialize database schema: {e}")
+
     # Trigger connection check
     redis_alive = RedisClient.check_redis_alive()
     if not redis_alive:
