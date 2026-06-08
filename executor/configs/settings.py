@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     DEFAULT_MAX_RETRIES: int = 3
     DEFAULT_RETRY_BACKOFF: float = 2.0
     
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=True)
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore")
 
 
 settings = Settings()

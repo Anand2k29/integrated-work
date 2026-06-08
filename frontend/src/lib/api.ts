@@ -1,6 +1,13 @@
 // API Layer for the Async Execution System Frontend
 // Production-grade: NO mock data, NO fallbacks. All data comes from the live backend.
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+//
+// Requests target the SAME-ORIGIN path `/api/v1`, which Next.js (see
+// next.config.ts `rewrites`) and Nginx (production) transparently proxy to the
+// FastAPI backend. Calling a relative path avoids cross-origin/CORS failures,
+// HTTP/HTTPS mismatches, and broken absolute URLs — the historical cause of the
+// browser's opaque "Failed to fetch" error. The backend location is configured
+// server-side via NEXT_PUBLIC_API_URL (used by the proxy), not in the browser.
+const API_BASE_URL = '/api/v1';
 
 // ---------------------------------------------------------------------------
 // Error Handling
@@ -18,17 +25,58 @@ export class ApiError extends Error {
   }
 }
 
+// Translate a raw HTTP status into an actionable, human-readable message.
+function describeStatus(status: number, detail: string): string {
+  switch (status) {
+    case 400: return detail || 'Invalid request. Check the data you submitted.';
+    case 401: return 'Authentication required. Provide a valid token or API key.';
+    case 403: return 'Access denied. You are not authorized for this resource.';
+    case 404: return detail || 'Resource not found.';
+    case 408: return 'The target server timed out. Try again.';
+    case 422: return detail || 'Validation failed. Check the request payload.';
+    case 429: return 'Rate limit exceeded. Please slow down and retry.';
+    case 502: return 'Backend server is unreachable. Ensure the FastAPI backend is running on port 8000.';
+    case 503: return detail || 'A backend dependency (database, Redis, or workers) is unavailable.';
+    case 504: return 'The backend gateway timed out while processing the request.';
+    default:
+      if (status >= 500) return detail || 'The backend encountered an internal error.';
+      return detail || `Request failed (HTTP ${status}).`;
+  }
+}
+
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, options);
+  let res: Response;
+  try {
+    res = await fetch(url, options);
+  } catch (e) {
+    // A thrown fetch (TypeError "Failed to fetch") is a transport-level failure:
+    // the request never reached the backend. Surface an actionable message
+    // instead of the opaque browser default.
+    throw new ApiError(
+      0,
+      'Network connection failed: could not reach the backend API. ' +
+      'Verify the backend server is running and reachable, then retry.'
+    );
+  }
+
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
+    let detail = '';
     try {
       const body = await res.json();
-      detail = body.detail || body.message || detail;
-    } catch { /* ignore parse errors */ }
-    throw new ApiError(res.status, detail);
+      detail = body.detail || body.message || '';
+    } catch { /* response had no JSON body */ }
+    throw new ApiError(res.status, describeStatus(res.status, detail));
   }
-  return res.json();
+
+  // Some endpoints (e.g. 204 No Content) return an empty body.
+  if (res.status === 204) return undefined as unknown as T;
+  const text = await res.text();
+  if (!text) return undefined as unknown as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError(res.status, 'Unable to parse the response from the backend.');
+  }
 }
 
 // ---------------------------------------------------------------------------
