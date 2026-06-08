@@ -116,7 +116,23 @@ async def discover_and_submit(scan_id: uuid.UUID, req: DiscoverRequest, db: Asyn
     all_tasks = base_tasks + jwt_tasks + fuzzing_tasks
     if all_tasks:
         return await submit_tasks(scan_id, all_tasks, db)
-    return {"message": "No tasks generated from spec"}
+
+    # Nothing was generated. If the parser reported problems, the source was not
+    # a valid OpenAPI/Swagger spec (e.g. a plain URL, an API key, or malformed
+    # content). Surface an actionable error instead of a silent success.
+    parse_errors = DiscoveryBridge.last_parse_errors
+    if parse_errors:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Swagger/OpenAPI specification: "
+                   + "; ".join(parse_errors[:3])
+                   + ". Provide a valid OpenAPI/Swagger URL (e.g. .../openapi.json) or spec content."
+        )
+    raise HTTPException(
+        status_code=400,
+        detail="No endpoints were found in the provided specification. "
+               "Ensure the source is a reachable OpenAPI/Swagger document."
+    )
 
 @router.get("/scans/{scan_id}/report")
 async def get_scan_report(scan_id: str, db: AsyncSession = Depends(get_db_session)):
