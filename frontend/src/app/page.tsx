@@ -128,7 +128,7 @@ export default function App() {
   }
 
   return (
-    <div className="relative min-h-screen bg-background text-foreground flex flex-col justify-between overflow-hidden">
+    <div className="relative h-screen bg-background text-foreground flex flex-col justify-between overflow-hidden">
       {/* Top Banner Alert Notification */}
       <AnimatePresence>
         {systemAlert && (
