@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     # Database — set DATABASE_URL directly to override the PostgreSQL default.
     # For local dev with SQLite:  DATABASE_URL=sqlite+aiosqlite:///./test.db
     # For production:             DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db
+    #
+    # NOTE: When deploying the backend and database on different hosts (Render,
+    # Railway, EC2, managed Postgres, etc.) you MUST provide DATABASE_URL as an
+    # environment variable pointing at the real DB host. The "localhost" pieces
+    # below are only a convenience default for running everything on one machine
+    # — inside a deployed container "localhost" refers to the container itself
+    # and cannot reach an external database.
     DATABASE_URL: Optional[str] = None
 
     # PostgreSQL credentials (used only when DATABASE_URL is not set)
@@ -29,6 +36,8 @@ class Settings(BaseSettings):
             )
 
     # Redis
+    # As with the database, set REDIS_URL (or REDIS_HOST) to the real Redis host
+    # when deploying. "localhost" only works when Redis runs in the same place.
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
@@ -38,16 +47,29 @@ class Settings(BaseSettings):
         super().__init__(**data)
         if self.REDIS_URL is None:
             self.REDIS_URL = f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
-        
+
+    # CORS
+    # Comma-separated list of allowed origins. Use "*" (default) for development.
+    # For production set an explicit list, e.g.:
+    #   CORS_ORIGINS=https://integrated-work.vercel.app,https://www.example.com
+    CORS_ORIGINS: str = "*"
+    # Regex applied in addition to CORS_ORIGINS, so preview deployments work
+    # without enumerating every ephemeral subdomain.
+    CORS_ORIGIN_REGEX: str = r"https://.*\.(netlify\.app|vercel\.app)|http://localhost:\d+"
+
+    @property
+    def cors_origins_list(self) -> List[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
     # Worker Configuration
     WORKER_CONCURRENCY: int = 100
     WORKER_HEARTBEAT_INTERVAL: int = 5
     WORKER_TIMEOUT: int = 30
-    
+
     # Rate Limiting & Retry
     DEFAULT_MAX_RETRIES: int = 3
     DEFAULT_RETRY_BACKOFF: float = 2.0
-    
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore")
 
 

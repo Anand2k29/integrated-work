@@ -1,6 +1,11 @@
 import logging
-from fastapi import FastAPI
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from sqlalchemy import text
 from prometheus_client import make_asgi_app
 
 from executor.configs.settings import settings
@@ -20,11 +25,28 @@ app = FastAPI(
     description="Async Execution System for API Security Scanner"
 )
 
-# CORS
+# ---------------------------------------------------------------------------
+# Middleware
+# ---------------------------------------------------------------------------
+
+# Reverse-proxy support: when running behind Nginx / Render / Railway, honour
+# X-Forwarded-* headers so request.url, scheme and client host are correct.
+try:
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+except Exception as e:  # pragma: no cover - defensive, uvicorn always present
+    logger.warning(f"Could not enable ProxyHeadersMiddleware: {e}")
+
+# CORS. Defaults to "*" for development; set CORS_ORIGINS to an explicit,
+# comma-separated list of frontend domains in production. When the wildcard is
+# used, credentials must be disabled (browsers reject "*" + credentials).
+_cors_origins = settings.cors_origins_list
+_allow_all = "*" in _cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, restrict this
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_origin_regex=None if _allow_all else settings.CORS_ORIGIN_REGEX,
+    allow_credentials=not _allow_all,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -40,6 +62,42 @@ app.include_router(copilot_router)
 from executor.api.sse_routes import router as sse_router
 app.include_router(sse_router)
 
+
+# ---------------------------------------------------------------------------
+# Exception handlers — standardized JSON so the frontend never receives an
+# opaque body for a 500. Known HTTP/validation errors keep their status codes;
+# anything unexpected is wrapped in {"success": false, "message": ...}.
+# ---------------------------------------------------------------------------
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "message": exc.detail, "detail": exc.detail},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"success": False, "message": "Validation error", "detail": exc.errors()},
+    )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled error processing {request.method} {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "message": str(exc) or "Internal server error"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle
+# ---------------------------------------------------------------------------
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("Initializing API and checking Redis status...")
@@ -47,18 +105,32 @@ async def startup_event():
     # Ensure the database schema exists. This is idempotent (only missing tables
     # are created) and makes the backend self-sufficient regardless of how it is
     # launched, so data endpoints never 500 due to a missing schema (the common
-    # cause of "internal error" on /api/v1/scans in fresh environments).
+    # cause of "internal error" / "relation does not exist" on /api/v1/scans in
+    # fresh environments).
     try:
         from executor.persistence.database import engine, Base
         import executor.persistence.models  # noqa: F401  (register ORM models)
         async with engine.begin() as conn:
+            # Fail-fast validation: confirm the database is actually reachable
+            # before serving traffic, instead of crashing later on the first
+            # frontend request.
+            await conn.execute(text("SELECT 1"))
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database schema verified/created.")
+        logger.info("Database connection verified and schema created/validated.")
     except Exception as e:
-        logger.error(f"Failed to initialize database schema: {e}")
+        # Surface the failure loudly. In production a deployment should treat an
+        # unreachable database as fatal; we log clearly so it is obvious why
+        # data endpoints would fail.
+        logger.error(f"DATABASE STARTUP CHECK FAILED — backend cannot reach the database: {e}")
 
-    # Trigger connection check
-    redis_alive = RedisClient.check_redis_alive()
+    # Trigger connection check. Guard against check_redis_alive raising so a
+    # flaky Redis probe can never block startup; treat any error as "no Redis".
+    try:
+        redis_alive = RedisClient.check_redis_alive()
+    except Exception as e:
+        logger.warning(f"Redis availability check raised, assuming unavailable: {e}")
+        redis_alive = False
+
     if not redis_alive:
         logger.info("Starting WorkerPoolManager as a background task inside FastAPI process (in-memory dev mode)...")
         from executor.worker_manager.manager import WorkerPoolManager
@@ -75,6 +147,7 @@ async def startup_event():
     else:
         logger.info("Production Redis detected. Worker execution must be started externally via run_worker.py")
 
+
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Shutting down API...")
@@ -83,13 +156,51 @@ async def shutdown_event():
         await app.state.worker_manager.stop()
     await RedisClient.close()
 
+
+# ---------------------------------------------------------------------------
+# Health endpoints
+# ---------------------------------------------------------------------------
+
 @app.get("/health")
 async def health_check():
-    redis_alive = RedisClient.check_redis_alive()
+    try:
+        redis_alive = RedisClient.check_redis_alive()
+    except Exception:
+        redis_alive = False
     return {
         "status": "ok",
+        "success": True,
         "version": settings.APP_VERSION,
         "mode": "standalone_in_memory" if not redis_alive else "distributed",
         "redis_connected": redis_alive
     }
 
+
+@app.get("/health/database")
+async def health_database():
+    """Reports whether the database is reachable (for readiness checks)."""
+    from executor.persistence.database import engine
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return {"status": "ok", "success": True, "database_connected": True}
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "success": False, "database_connected": False, "message": str(e)},
+        )
+
+
+@app.get("/health/redis")
+async def health_redis():
+    """Reports Redis availability; the system falls back to in-memory mode when down."""
+    try:
+        redis_alive = RedisClient.check_redis_alive()
+    except Exception:
+        redis_alive = False
+    return {
+        "status": "ok" if redis_alive else "degraded",
+        "success": True,
+        "redis_connected": redis_alive,
+        "mode": "distributed" if redis_alive else "standalone_in_memory",
+    }
