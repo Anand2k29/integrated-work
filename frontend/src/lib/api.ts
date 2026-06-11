@@ -10,6 +10,74 @@
 const API_BASE_URL = '/api/v1';
 
 // ---------------------------------------------------------------------------
+// Auth token storage (localStorage) + helpers
+// ---------------------------------------------------------------------------
+
+const ACCESS_KEY = 'tll_access_token';
+const REFRESH_KEY = 'tll_refresh_token';
+const USER_KEY = 'tll_user';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  full_name?: string | null;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  message: string;
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  user: AuthUser;
+}
+
+export const authStore = {
+  getAccess: (): string | null => (typeof window !== 'undefined' ? localStorage.getItem(ACCESS_KEY) : null),
+  getRefresh: (): string | null => (typeof window !== 'undefined' ? localStorage.getItem(REFRESH_KEY) : null),
+  getUser: (): AuthUser | null => {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(USER_KEY);
+    try { return raw ? (JSON.parse(raw) as AuthUser) : null; } catch { return null; }
+  },
+  set: (access: string, refresh: string, user: AuthUser) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(ACCESS_KEY, access);
+    localStorage.setItem(REFRESH_KEY, refresh);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  },
+  clear: () => {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+    localStorage.removeItem(USER_KEY);
+  },
+  isAuthenticated: (): boolean => (typeof window !== 'undefined' && !!localStorage.getItem(ACCESS_KEY)),
+};
+
+// Attempt to refresh the access token using the stored refresh token.
+async function tryRefresh(): Promise<boolean> {
+  const refresh = authStore.getRefresh();
+  if (!refresh) return false;
+  try {
+    const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) { authStore.clear(); return false; }
+    const data = (await res.json()) as AuthResponse;
+    authStore.set(data.access_token, data.refresh_token, data.user);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Error Handling
 // ---------------------------------------------------------------------------
 
@@ -44,10 +112,16 @@ function describeStatus(status: number, detail: string): string {
   }
 }
 
-async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+async function apiFetch<T>(url: string, options: RequestInit = {}, retryOn401 = true): Promise<T> {
+  const headers = new Headers(options.headers || {});
+  const token = authStore.getAccess();
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   let res: Response;
   try {
-    res = await fetch(url, options);
+    res = await fetch(url, { ...options, headers });
   } catch (e) {
     // A thrown fetch (TypeError "Failed to fetch") is a transport-level failure:
     // the request never reached the backend. Surface an actionable message
@@ -57,6 +131,12 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
       'Network connection failed: could not reach the backend API. ' +
       'Verify the backend server is running and reachable, then retry.'
     );
+  }
+
+  // Access token expired/invalid: try a one-time silent refresh, then retry.
+  if (res.status === 401 && retryOn401 && authStore.getRefresh() && !url.includes('/auth/')) {
+    const refreshed = await tryRefresh();
+    if (refreshed) return apiFetch<T>(url, options, false);
   }
 
   if (!res.ok) {
@@ -258,6 +338,51 @@ export interface CopilotResponse {
 // ---------------------------------------------------------------------------
 
 export const apiService = {
+  // ---- Auth ----
+
+  async register(email: string, password: string, fullName?: string): Promise<AuthResponse> {
+    const data = await apiFetch<AuthResponse>(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, full_name: fullName }),
+    });
+    authStore.set(data.access_token, data.refresh_token, data.user);
+    return data;
+  },
+
+  async login(email: string, password: string): Promise<AuthResponse> {
+    const data = await apiFetch<AuthResponse>(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    authStore.set(data.access_token, data.refresh_token, data.user);
+    return data;
+  },
+
+  async logout(): Promise<void> {
+    const refresh = authStore.getRefresh();
+    try {
+      if (refresh) {
+        await fetch(`${API_BASE_URL}/auth/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refresh }),
+        });
+      }
+    } finally {
+      authStore.clear();
+    }
+  },
+
+  async getMe(): Promise<AuthUser> {
+    return apiFetch<AuthUser>(`${API_BASE_URL}/auth/me`);
+  },
+
+  async listUsers(): Promise<AuthUser[]> {
+    return apiFetch<AuthUser[]>(`${API_BASE_URL}/auth/users`);
+  },
+
   // ---- Scans ----
 
   async getScans(): Promise<Scan[]> {

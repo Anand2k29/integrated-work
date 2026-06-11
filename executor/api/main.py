@@ -64,6 +64,8 @@ from executor.api.copilot_routes import router as copilot_router
 app.include_router(copilot_router)
 from executor.api.sse_routes import router as sse_router
 app.include_router(sse_router)
+from executor.api.auth_routes import router as auth_router
+app.include_router(auth_router)
 
 
 # ---------------------------------------------------------------------------
@@ -180,9 +182,15 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # exc.errors() can contain non-JSON-serializable objects (e.g. the original
+    # ValueError in "ctx"); keep only the safe, serializable fields.
+    clean = [
+        {"type": e.get("type"), "loc": [str(p) for p in e.get("loc", [])], "msg": e.get("msg")}
+        for e in exc.errors()
+    ]
     return JSONResponse(
         status_code=422,
-        content={"success": False, "message": "Validation error", "detail": exc.errors()},
+        content={"success": False, "message": "Validation error", "detail": clean},
     )
 
 
@@ -218,6 +226,30 @@ async def startup_event():
             await conn.execute(text("SELECT 1"))
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database connection verified and schema created/validated.")
+
+        # Optional: bootstrap an admin account from env on first run.
+        if settings.BOOTSTRAP_ADMIN_EMAIL and settings.BOOTSTRAP_ADMIN_PASSWORD:
+            try:
+                from sqlalchemy import select
+                from executor.persistence.database import AsyncSessionLocal
+                from executor.persistence.models import User, UserRole
+                from executor.api.auth import hash_password
+                async with AsyncSessionLocal() as session:
+                    existing = await session.execute(
+                        select(User).where(User.email == settings.BOOTSTRAP_ADMIN_EMAIL.strip().lower())
+                    )
+                    if existing.scalar_one_or_none() is None:
+                        session.add(User(
+                            email=settings.BOOTSTRAP_ADMIN_EMAIL.strip().lower(),
+                            full_name="Administrator",
+                            hashed_password=hash_password(settings.BOOTSTRAP_ADMIN_PASSWORD),
+                            role=UserRole.ADMIN.value,
+                            is_active=True,
+                        ))
+                        await session.commit()
+                        logger.info(f"Bootstrapped admin user: {settings.BOOTSTRAP_ADMIN_EMAIL}")
+            except Exception as be:
+                logger.error(f"Failed to bootstrap admin user: {be}")
     except Exception as e:
         # Surface the failure loudly. In production a deployment should treat an
         # unreachable database as fatal; we log clearly so it is obvious why
