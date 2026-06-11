@@ -63,7 +63,9 @@ async def submit_tasks(scan_id: uuid.UUID, tasks: List[TaskSubmit], db: AsyncSes
             headers=headers,
             payload=t_data.payload,
             status=TaskStatus.QUEUED.value,
-            max_retries=t_data.retry_count
+            max_retries=t_data.retry_count,
+            mutation_strategy=getattr(t_data, "mutation_strategy", None),
+            mutation_reason=getattr(t_data, "mutation_reason", None),
         )
         db_tasks.append(db_task)
         db.add(db_task)
