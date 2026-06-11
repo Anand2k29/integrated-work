@@ -70,6 +70,22 @@ class Settings(BaseSettings):
     DEFAULT_MAX_RETRIES: int = 3
     DEFAULT_RETRY_BACKOFF: float = 2.0
 
+    # ---- Authentication (JWT) ----
+    # JWT_SECRET MUST be set to a strong random value in production. The default
+    # is for local dev only; tokens signed with it are not secure.
+    JWT_SECRET: str = "dev-insecure-change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # When True, business endpoints require a valid access token. Kept False by
+    # default so existing flows keep working; flip to True to lock the API down.
+    AUTH_REQUIRED: bool = False
+
+    # Optional bootstrap admin created on startup if no users exist.
+    BOOTSTRAP_ADMIN_EMAIL: Optional[str] = None
+    BOOTSTRAP_ADMIN_PASSWORD: Optional[str] = None
+
     # ---- HTTP hardening (middleware) ----
     # Per-client-IP request rate limit. Returns 429 when exceeded.
     RATE_LIMIT_ENABLED: bool = True
