@@ -70,6 +70,24 @@ class Settings(BaseSettings):
     DEFAULT_MAX_RETRIES: int = 3
     DEFAULT_RETRY_BACKOFF: float = 2.0
 
+    # ---- HTTP hardening (middleware) ----
+    # Per-client-IP request rate limit. Returns 429 when exceeded.
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_PER_MINUTE: int = 120
+
+    # Server-side request timeout. Long requests are aborted with 504 so the
+    # frontend gets a clear error instead of a hanging connection. Streaming
+    # (SSE) endpoints are exempt.
+    REQUEST_TIMEOUT_SECONDS: int = 30
+
+    # Structured access logging (method, path, status, latency).
+    REQUEST_LOGGING_ENABLED: bool = True
+
+    # Security response headers.
+    SECURITY_HEADERS_ENABLED: bool = True
+    # Strict-Transport-Security — only enable when always served over HTTPS.
+    ENABLE_HSTS: bool = False
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore")
 
 

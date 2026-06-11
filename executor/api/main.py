@@ -1,4 +1,7 @@
+import asyncio
 import logging
+import time
+from collections import deque
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,6 +64,104 @@ from executor.api.copilot_routes import router as copilot_router
 app.include_router(copilot_router)
 from executor.api.sse_routes import router as sse_router
 app.include_router(sse_router)
+
+
+# ---------------------------------------------------------------------------
+# Hardening middleware: access logging, security headers, rate limiting,
+# and a server-side request timeout. These run for every request and make the
+# API safer and easier to debug in production.
+# ---------------------------------------------------------------------------
+
+# Paths that must NOT be rate-limited or timed out (probes, metrics, docs,
+# and long-lived Server-Sent-Events streams).
+_INFRA_PATHS = ("/health", "/metrics", "/docs", "/redoc", "/openapi.json")
+
+
+def _is_infra_path(path: str) -> bool:
+    return path.startswith(_INFRA_PATHS) or path == "/"
+
+
+def _is_stream_path(path: str) -> bool:
+    return "/stream/" in path
+
+
+# In-memory sliding-window rate limiter keyed by client IP. Suitable for a
+# single instance / dev; for multi-instance production back it with Redis.
+_rate_buckets: dict = {}
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if not settings.RATE_LIMIT_ENABLED or request.method == "OPTIONS" or _is_infra_path(request.url.path):
+        return await call_next(request)
+
+    ip = _client_ip(request)
+    now = time.monotonic()
+    window = 60.0
+    bucket = _rate_buckets.setdefault(ip, deque())
+    while bucket and now - bucket[0] > window:
+        bucket.popleft()
+
+    if len(bucket) >= settings.RATE_LIMIT_PER_MINUTE:
+        retry_after = int(window - (now - bucket[0])) + 1
+        logger.warning(f"Rate limit exceeded for {ip} on {request.url.path}")
+        return JSONResponse(
+            status_code=429,
+            content={"success": False, "message": "Too many requests. Please slow down and retry.",
+                     "error": {"type": "rate_limited", "retry_after_seconds": retry_after}},
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    bucket.append(now)
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def request_timeout_middleware(request: Request, call_next):
+    # Never time out streaming endpoints (SSE) or infra/metrics paths.
+    if settings.REQUEST_TIMEOUT_SECONDS <= 0 or _is_stream_path(request.url.path) or request.url.path.startswith("/metrics"):
+        return await call_next(request)
+    try:
+        return await asyncio.wait_for(call_next(request), timeout=settings.REQUEST_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.error(f"Request timed out after {settings.REQUEST_TIMEOUT_SECONDS}s: {request.method} {request.url.path}")
+        return JSONResponse(
+            status_code=504,
+            content={"success": False, "message": "The server took too long to process the request.",
+                     "error": {"type": "timeout"}},
+        )
+
+
+@app.middleware("http")
+async def access_log_and_headers_middleware(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - start) * 1000
+
+    if settings.REQUEST_LOGGING_ENABLED:
+        logger.info(f"{request.method} {request.url.path} -> {response.status_code} ({elapsed_ms:.1f}ms) ip={_client_ip(request)}")
+    response.headers["X-Process-Time-Ms"] = f"{elapsed_ms:.1f}"
+
+    if settings.SECURITY_HEADERS_ENABLED:
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("X-XSS-Protection", "1; mode=block")
+        # Don't apply a restrictive CSP to the interactive API docs (Swagger UI
+        # loads assets from a CDN); apply it to API/JSON responses only.
+        if not request.url.path.startswith(("/docs", "/redoc", "/openapi.json")):
+            response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+        if settings.ENABLE_HSTS:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+
+    return response
 
 
 # ---------------------------------------------------------------------------
