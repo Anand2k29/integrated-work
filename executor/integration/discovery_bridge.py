@@ -36,7 +36,11 @@ class DiscoveryBridge:
         if spec_source.startswith(("http://", "https://")):
             parser = OpenAPIParser.from_url(spec_source)
         
-        elif spec_source.startswith("{") or spec_source.startswith("openapi"):
+        elif (
+            spec_source.lstrip().startswith("{")
+            or spec_source.lstrip().startswith("openapi:")
+            or spec_source.lstrip().startswith("swagger:")
+        ):
             parser = OpenAPIParser.from_content(
                 spec_source,
                 source_name="inline_spec"
@@ -47,10 +51,22 @@ class DiscoveryBridge:
             parser = OpenAPIParser.from_url(spec_source)
         
         result = parser.parse()
+        logger.info(json.dumps(result, indent=2))
+        if result.get("errors_encountered"):
+            logger.warning(
+                f"Parser errors: {result['errors_encountered']}"
+            )
         endpoints = result.get("endpoints", [])
         DiscoveryBridge.last_parse_errors = result.get("errors_encountered", []) or []
         
-        logger.info(f"Discovered {len(endpoints)} endpoints from spec.")
+        logger.info(
+            f"Discovered {len(endpoints)} endpoints from spec."
+        )
+        
+        if len(endpoints) == 0:
+            raise ValueError(
+                f"No endpoints discovered. Parser errors: {DiscoveryBridge.last_parse_errors}"
+            )
         
         tasks = []
         for ep in endpoints:
