@@ -28,14 +28,24 @@ class DiscoveryBridge:
         """
         logger.info(f"Running endpoint discovery on {spec_source}")
         
-        if spec_source.startswith("http://") or spec_source.startswith("https://"):
+        spec_source = spec_source.strip()
+
+        if not spec_source:
+            raise ValueError("OpenAPI specification is empty.")
+        
+        if spec_source.startswith(("http://", "https://")):
             parser = OpenAPIParser.from_url(spec_source)
-        elif spec_source.strip().startswith("{") or spec_source.strip().startswith("openapi"):
-            # Raw JSON or YAML content passed as string
-            parser = OpenAPIParser.from_content(spec_source, source_name="inline_spec")
+        
+        elif spec_source.startswith("{") or spec_source.startswith("openapi"):
+            parser = OpenAPIParser.from_content(
+                spec_source,
+                source_name="inline_spec"
+            )
+        
         else:
             parser = OpenAPIParser.from_file(spec_source)
-            
+            parser = OpenAPIParser.from_url(spec_source)
+        
         result = parser.parse()
         endpoints = result.get("endpoints", [])
         DiscoveryBridge.last_parse_errors = result.get("errors_encountered", []) or []
