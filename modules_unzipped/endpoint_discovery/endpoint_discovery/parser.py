@@ -26,9 +26,7 @@ class OpenAPIParser:
         self.errors_encountered: List[str] = []
         self.seen_endpoints: Set[tuple] = set()
 
-    content_type = response.headers.get("Content-Type", "")
-    # logger.info(content_type)
-    logger.info(response.text[:500])
+
     @classmethod
     def from_file(cls, filepath: str) -> "OpenAPIParser":
         """Loads a specification from a JSON or YAML file."""
@@ -53,7 +51,7 @@ class OpenAPIParser:
             timeout=30.0,
             follow_redirects=True,
             verify=True
-        ) as client:
+            ) as client:
                 response = client.get(
                     url,
                     follow_redirects=True
@@ -62,7 +60,18 @@ class OpenAPIParser:
                 logger.info(f"Status Code : {response.status_code}")
                 logger.info(response.text[:500])
                 response.raise_for_status()
-                return cls.from_content(response.text, source_name=url)
+                content_type = response.headers.get("Content-Type", "")
+                if "yaml" in content_type or "yml" in content_type:
+                    return cls.from_content(
+                        response.text,
+                        source_name="remote_yaml"
+                    )
+                else:
+                    return cls.from_content(
+                        response.text,
+                        source_name="remote_json"
+                    )
+                
         except Exception as e:
             logger.exception(e)
         
