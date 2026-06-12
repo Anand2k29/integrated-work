@@ -153,7 +153,7 @@ export function AiAssistant({ currentView, activeScanId }: AiAssistantProps) {
               max-w-[1000px]
               w-[600px]
             "
-          >
+          ><div/>
         {/* Soft background glow */}
         <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute bottom-1/4 right-1/4 w-32 h-32 bg-info/5 rounded-full blur-3xl pointer-events-none"></div>
