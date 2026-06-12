@@ -1,8 +1,13 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional
+from pydantic import Field
+
 
 
 class Settings(BaseSettings):
+
+    GEMINI_API_KEY: str = Field(default="") 
+    
     # Application
     APP_NAME: str = "Async Execution System"
     APP_VERSION: str = "1.0.0"
@@ -89,7 +94,7 @@ class Settings(BaseSettings):
     # ---- HTTP hardening (middleware) ----
     # Per-client-IP request rate limit. Returns 429 when exceeded.
     RATE_LIMIT_ENABLED: bool = True
-    RATE_LIMIT_PER_MINUTE: int = 120
+    RATE_LIMIT_PER_MINUTE: int = 1000
 
     # Server-side request timeout. Long requests are aborted with 504 so the
     # frontend gets a clear error instead of a hanging connection. Streaming
