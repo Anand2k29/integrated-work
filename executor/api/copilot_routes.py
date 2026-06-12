@@ -150,7 +150,13 @@ async def _call_llm(system_prompt: str, user_query: str) -> str:
     # Try Gemini first, then OpenAI
     gemini_key = os.environ.get("GEMINI_API_KEY")
     openai_key = os.environ.get("OPENAI_API_KEY")
-
+    logger.info(
+        f"GEMINI_API_KEY found: {bool(gemini_key)}"
+    )
+    
+    logger.info(
+        f"OPENAI_API_KEY found: {bool(openai_key)}"
+    )
     if gemini_key:
         logger.info("Using Gemini API")
         return await _call_gemini(
