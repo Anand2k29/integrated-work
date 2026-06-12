@@ -33,22 +33,25 @@ class DiscoveryBridge:
         if not spec_source:
             raise ValueError("OpenAPI specification is empty.")
         
+        spec = spec_source.lstrip()
+
         if spec_source.startswith(("http://", "https://")):
             parser = OpenAPIParser.from_url(spec_source)
         
-        elif (
-            spec_source.lstrip().startswith("{")
-            or spec_source.lstrip().startswith("openapi:")
-            or spec_source.lstrip().startswith("swagger:")
-        ):
+        elif spec.startswith("{"):
             parser = OpenAPIParser.from_content(
                 spec_source,
-                source_name="inline_spec"
+                source_name="inline_json"
+            )
+        
+        elif spec.startswith(("openapi:", "swagger:")):
+            parser = OpenAPIParser.from_content(
+                spec_source,
+                source_name="inline_yaml"
             )
         
         else:
             parser = OpenAPIParser.from_file(spec_source)
-            parser = OpenAPIParser.from_url(spec_source)
         
         result = parser.parse()
         logger.info(json.dumps(result, indent=2))
