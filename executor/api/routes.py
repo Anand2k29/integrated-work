@@ -165,7 +165,7 @@ async def get_scan_progress(scan_id: uuid.UUID, db: AsyncSession = Depends(get_d
         "QUEUED": 0,
         "PROCESSING": 0,
         "RETRYING": 0,
-        "SUCCESS": 100,
+        "SUCCESS": 0,
         "FAILED": 0
     }
     
