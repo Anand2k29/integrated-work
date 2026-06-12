@@ -28,7 +28,7 @@ class DiscoveryBridge:
         """
         logger.info(f"Running endpoint discovery on {spec_source}")
         
-        spec_source = spec_source.strip()
+        spec = spec_source.lstrip()
 
         if spec.startswith(("http://", "https://")):
             parser = OpenAPIParser.from_url(spec)
