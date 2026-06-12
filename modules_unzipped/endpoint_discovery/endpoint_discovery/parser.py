@@ -49,11 +49,18 @@ class OpenAPIParser:
     def from_url(cls, url: str) -> "OpenAPIParser":
         """Fetches a specification from a URL (JSON or YAML)."""
         try:
-            with httpx.Client(timeout=30.0) as client:
+            with httpx.Client(
+            timeout=30.0,
+            follow_redirects=True,
+            verify=True
+        ) as client:
                 response = client.get(
                     url,
                     follow_redirects=True
                 )
+                logger.info(f"Fetching {url}")
+                logger.info(f"Status Code : {response.status_code}")
+                logger.info(response.text[:500])
                 response.raise_for_status()
                 return cls.from_content(response.text, source_name=url)
         except Exception as e:
