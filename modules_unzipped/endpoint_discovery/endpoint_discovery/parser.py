@@ -27,17 +27,17 @@ class OpenAPIParser:
         self.seen_endpoints: Set[tuple] = set()
 
 
-  @classmethod
-  def from_file(cls, filepath: str):
+    @classmethod
+    def from_file(cls, filepath: str):
         try:
             with open(filepath, "r", encoding="utf-8") as f:
                 content = f.read()
-    
+        
             return cls.from_content(
                 content,
                 source_name=filepath
-            )
-    
+                )
+        
         except Exception as e:
             parser = cls({})
             parser.errors_encountered.append(
