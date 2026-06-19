@@ -62,6 +62,8 @@ async def submit_tasks(scan_id: uuid.UUID, tasks: List[TaskSubmit], db: AsyncSes
             url=t_data.url,
             headers=headers,
             payload=t_data.payload,
+            mutation_strategy=t_data.mutation_strategy,
+            mutation_reason=t_data.mutation_reason,
             status=TaskStatus.QUEUED.value,
             max_retries=t_data.retry_count
         )
@@ -79,6 +81,8 @@ async def submit_tasks(scan_id: uuid.UUID, tasks: List[TaskSubmit], db: AsyncSes
             url=db_task.url,
             headers=db_task.headers,
             payload=db_task.payload,
+            mutation_strategy=db_task.mutation_strategy,
+            mutation_reason=db_task.mutation_reason,
             max_retries=db_task.max_retries,
             priority_level=t_data.priority_level
         )

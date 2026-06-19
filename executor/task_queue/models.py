@@ -18,6 +18,8 @@ class QueuePayload(BaseModel):
     url: str
     headers: Optional[Dict[str, str]] = None
     payload: Optional[Any] = None
+    mutation_strategy: Optional[str] = None
+    mutation_reason: Optional[str] = None
     
     # Retry orchestration
     attempt: int = 0
