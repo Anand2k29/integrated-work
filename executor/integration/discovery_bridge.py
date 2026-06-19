@@ -26,13 +26,69 @@ class DiscoveryBridge:
         
         if spec_source.startswith("http://") or spec_source.startswith("https://"):
             parser = OpenAPIParser.from_url(spec_source)
+            result = parser.parse()
+            endpoints = result.get("endpoints", [])
+            
+            # Intelligent Probing Fallback: Try common spec paths if the main URL fails parsing
+            if not endpoints and any("paths" in str(e).lower() or "json" in str(e).lower() for e in result.get("errors_encountered", [])):
+                logger.info(f"Initial parse failed for {spec_source}, trying common spec paths...")
+                from urllib.parse import urlparse
+                parsed_url = urlparse(spec_source)
+                base_host = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                
+                paths_to_try = [
+                    spec_source.rstrip('/') + "/swagger.json",
+                    spec_source.rstrip('/') + "/openapi.json",
+                    spec_source.rstrip('/') + "/api-docs",
+                    base_host + "/swagger.json",
+                    base_host + "/openapi.json",
+                    base_host + "/api-docs",
+                ]
+                
+                unique_paths = []
+                for p in paths_to_try:
+                    if p not in unique_paths:
+                        unique_paths.append(p)
+                        
+                for test_url in unique_paths:
+                    logger.info(f"Probing fallback URL: {test_url}")
+                    try:
+                        fallback_parser = OpenAPIParser.from_url(test_url)
+                        fallback_result = fallback_parser.parse()
+                        if fallback_result.get("endpoints"):
+                            logger.info(f"Successfully found spec at {test_url}")
+                            parser = fallback_parser
+                            result = fallback_result
+                            endpoints = result.get("endpoints", [])
+                            break
+                    except Exception:
+                        continue
+                        
+            # Final Fallback: Treat as a single endpoint if all spec discovery failed
+            if not endpoints:
+                logger.info(f"All specification probing failed. Treating {spec_source} as a single API endpoint.")
+                from urllib.parse import urlparse
+                parsed_url = urlparse(spec_source)
+                single_ep = {
+                    "method": "GET",
+                    "path": parsed_url.path or "/",
+                    "request_body_required": False,
+                    "has_auth": False,
+                    "parameters": [],
+                    "request_body_schema": None
+                }
+                result["endpoints"] = [single_ep]
+                # Override base_url to ensure the host is correct for this single endpoint
+                base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                
         elif spec_source.strip().startswith("{") or spec_source.strip().startswith("openapi"):
             # Raw JSON or YAML content passed as string
             parser = OpenAPIParser.from_content(spec_source, source_name="inline_spec")
+            result = parser.parse()
         else:
             parser = OpenAPIParser.from_file(spec_source)
+            result = parser.parse()
             
-        result = parser.parse()
         endpoints = result.get("endpoints", [])
         if not endpoints and result.get("errors_encountered"):
             raise ValueError("Spec discovery failed: " + "; ".join(result["errors_encountered"][:5]))

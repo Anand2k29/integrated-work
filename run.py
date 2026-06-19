@@ -21,7 +21,7 @@ if PROJECT_ROOT not in sys.path:
 
 def ensure_database():
     """Create database tables if they don't exist."""
-    from sqlalchemy import create_engine
+    from sqlalchemy.ext.asyncio import create_async_engine
     from executor.configs.settings import settings
     from executor.persistence.database import Base
 
@@ -29,17 +29,31 @@ def ensure_database():
     import executor.persistence.models  # noqa: F401
 
     db_url = settings.DATABASE_URL
-    # Convert async URL to sync for table creation
-    sync_url = db_url.replace("+aiosqlite", "").replace("+asyncpg", "+psycopg2")
+    # Remove sslmode for asyncpg
+    if "sslmode=" in db_url:
+        db_url = db_url.split("?")[0]
 
     connect_args = {}
-    if sync_url.startswith("sqlite"):
+    if db_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
 
-    engine = create_engine(sync_url, connect_args=connect_args)
-    Base.metadata.create_all(bind=engine)
-    engine.dispose()
-    print(f"[run.py] Database ready: {db_url}")
+    async def init_db():
+        engine = create_async_engine(db_url, connect_args=connect_args)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            
+            # Gracefully patch existing tables with new columns (for live data)
+            try:
+                from sqlalchemy import text
+                await conn.execute(text("ALTER TABLE tasks ADD COLUMN mutation_strategy VARCHAR(50);"))
+                await conn.execute(text("ALTER TABLE tasks ADD COLUMN mutation_reason VARCHAR(255);"))
+                print("[run.py] Patched tasks table with mutation columns.")
+            except Exception:
+                pass  # Columns likely already exist
+        await engine.dispose()
+        print(f"[run.py] Database ready: {db_url}")
+
+    asyncio.run(init_db())
 
 
 def main():
