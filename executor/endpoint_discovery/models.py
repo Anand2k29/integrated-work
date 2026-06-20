@@ -23,6 +23,20 @@ class DiscoveredEndpoint:
 
     def to_dict(self):
         """Standardized output for other teams."""
+from typing import Any, Dict, List, Optional
+
+
+@dataclass
+class DiscoveredEndpoint:
+    """Represents a single discovered API endpoint."""
+    method: str
+    path: str
+    request_body_required: bool = False
+    has_auth: bool = False
+    parameters: List[Dict[str, Any]] = field(default_factory=list)
+    request_body_schema: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "method": self.method,
             "path": self.path,

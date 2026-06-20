@@ -1,14 +1,11 @@
 {
-  "name": "async-execution-system",
+  "name": "mutation-engine",
   "version": "1.0.0",
-  "description": "[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi)](https://fastapi.tiangolo.com)\r [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)\r [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis)](https://redis.io)\r [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://docker.com)",
+  "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/RAMINENI-TEJA-24MEI10040/TLL-alpha.git"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "serve": "node index.js"
   },
   "keywords": [],
   "author": "",
@@ -19,5 +16,8 @@
   "homepage": "https://github.com/RAMINENI-TEJA-24MEI10040/TLL-alpha#readme",
   "devDependencies": {
     "@playwright/test": "^1.60.0"
+  "type": "commonjs",
+  "dependencies": {
+    "axios": "^1.16.1"
   }
 }

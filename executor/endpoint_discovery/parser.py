@@ -6,6 +6,7 @@ import httpx
 from .models import DiscoveredEndpoint
 
 # Attempt to import yaml for stretch goal
+# Attempt to import yaml
 try:
     import yaml
 except ImportError:
@@ -33,7 +34,6 @@ class OpenAPIParser:
                 content = f.read()
             return cls.from_content(content, source_name=filepath)
         except Exception as e:
-            # Create a parser with empty data and record the error
             parser = cls({})
             parser.errors_encountered.append(f"Could not load file {filepath}: {str(e)}")
             return parser
@@ -42,7 +42,7 @@ class OpenAPIParser:
     def from_url(cls, url: str) -> "OpenAPIParser":
         """Fetches a specification from a URL (JSON or YAML)."""
         try:
-            with httpx.Client(timeout=10.0) as client:
+            with httpx.Client(timeout=10.0, follow_redirects=True) as client:
                 response = client.get(url)
                 response.raise_for_status()
                 return cls.from_content(response.text, source_name=url)
@@ -102,6 +102,38 @@ class OpenAPIParser:
             return isinstance(security, list) and len(security) > 0
 
         # Check global security
+                    parser.errors_encountered.append(
+                        f"Failed to parse {source_name} as JSON or YAML: {e}, {ye}"
+                    )
+                    return parser
+            else:
+                parser = cls({})
+                parser.errors_encountered.append(
+                    f"Failed to parse {source_name} as JSON and YAML support is missing: {e}"
+                )
+                return parser
+        if not isinstance(data, dict):
+            parser = cls({})
+            parser.errors_encountered.append(
+                f"Parsed content from {source_name} is not a JSON object."
+            )
+            return parser
+        return cls(data)
+
+    def _normalize_path(self, path: str) -> str:
+        if not path:
+            return "/"
+        normalized = re.sub(r'/+', '/', path)
+        if len(normalized) > 1 and normalized.endswith('/'):
+            normalized = normalized.rstrip('/')
+        if not normalized.startswith('/'):
+            normalized = '/' + normalized
+        return normalized
+
+    def _check_auth(self, method_details: Dict[str, Any]) -> bool:
+        if "security" in method_details:
+            security = method_details["security"]
+            return isinstance(security, list) and len(security) > 0
         global_security = self.spec.get("security", [])
         return isinstance(global_security, list) and len(global_security) > 0
 
@@ -115,6 +147,11 @@ class OpenAPIParser:
             # External refs not supported in this version
             return schema
 
+        if not isinstance(schema, dict) or "$ref" not in schema:
+            return schema
+        ref_path = schema["$ref"]
+        if not ref_path.startswith("#/"):
+            return schema
         parts = ref_path.split("/")[1:]
         current = self.spec
         try:
@@ -141,7 +178,6 @@ class OpenAPIParser:
             if "application/json" in content:
                 schema = content["application/json"].get("schema")
 
-        # Swagger 2.0 structure
         if not schema:
             for param in method_details.get("parameters", []):
                 param = self._resolve_ref(param)
@@ -153,8 +189,6 @@ class OpenAPIParser:
         if schema:
             schema = self._resolve_ref(schema)
 
-        # Schema Fallback Logic:
-        # "When request body schema is missing: Default to empty object {} for POST/PUT/PATCH"
         if schema is None and method in ['POST', 'PUT', 'PATCH']:
             schema = {}
             logger.warning(f"Missing request body schema for {method}. Defaulting to empty object.")
@@ -204,7 +238,9 @@ class OpenAPIParser:
 
         for path, methods in paths_obj.items():
             if not isinstance(methods, dict):
-                self.errors_encountered.append(f"Invalid methods definition for path '{path}'. Expected object.")
+                self.errors_encountered.append(
+                    f"Invalid methods definition for path '{path}'. Expected object."
+                )
                 continue
 
             normalized_path = self._normalize_path(path)
@@ -212,49 +248,54 @@ class OpenAPIParser:
             for method_name, details in methods.items():
                 upper_method = method_name.upper()
 
-                # Validation: Invalid HTTP method
                 if upper_method not in self.VALID_METHODS:
-                    self.errors_encountered.append(f"Invalid HTTP method '{method_name}' for path '{path}'. Skipping.")
+                    self.errors_encountered.append(
+                        f"Invalid HTTP method '{method_name}' for path '{path}'. Skipping."
+                    )
                     continue
 
                 if not isinstance(details, dict):
-                    self.errors_encountered.append(f"Missing or invalid details for {upper_method} {path}.")
+                    self.errors_encountered.append(
+                        f"Missing or invalid details for {upper_method} {path}."
+                    )
                     continue
 
-                # De-duplication Logic
                 endpoint_key = (upper_method, normalized_path)
                 if endpoint_key in self.seen_endpoints:
-                    self.errors_encountered.append(f"Duplicate endpoint detected: {upper_method} {normalized_path}. Keeping first occurrence.")
+                    self.errors_encountered.append(
+                        f"Duplicate endpoint detected: {upper_method} {normalized_path}. Keeping first."
+                    )
                     continue
 
-                # Validation: Missing responses field
                 if "responses" not in details:
-                    self.errors_encountered.append(f"Missing 'responses' field for {upper_method} {path}.")
+                    self.errors_encountered.append(
+                        f"Missing 'responses' field for {upper_method} {path}."
+                    )
 
-                # Extract schema and requirement
                 body_schema, body_required = self._extract_body_schema(upper_method, details)
 
-                # Create endpoint object
                 endpoint = DiscoveredEndpoint(
                     method=upper_method,
                     path=normalized_path,
                     request_body_required=body_required,
                     has_auth=self._check_auth(details),
                     parameters=self._process_parameters(details),
-                    request_body_schema=body_schema
+                    request_body_schema=body_schema,
                 )
 
                 self.endpoints.append(endpoint)
                 self.seen_endpoints.add(endpoint_key)
 
         result = self._build_result()
-        logger.info(f"Discovery complete. Found {len(self.endpoints)} endpoints with {len(self.errors_encountered)} errors/warnings.")
+        logger.info(
+            f"Discovery complete. Found {len(self.endpoints)} endpoints "
+            f"with {len(self.errors_encountered)} errors/warnings."
+        )
         return result
 
     def _build_result(self) -> Dict[str, Any]:
-        """Constructs the final output dictionary."""
         return {
             "endpoints": [e.to_dict() for e in self.endpoints],
             "errors_encountered": self.errors_encountered,
-            "total_endpoints": len(self.endpoints)
+            "total_endpoints": len(self.endpoints),
         }
