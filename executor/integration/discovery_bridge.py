@@ -2,10 +2,7 @@ import logging
 from typing import List, Any
 import json
 
-from executor.integration.sys_path_setup import setup_paths
-setup_paths()
-
-from endpoint_discovery.parser import OpenAPIParser
+from executor.endpoint_discovery.parser import OpenAPIParser
 from executor.api.schemas import TaskSubmit
 
 logger = logging.getLogger(__name__)
