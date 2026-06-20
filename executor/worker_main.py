@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from executor.workers.engine import WorkerEngine
-from executor.queue.redis_client import RedisClient
+from executor.task_queue.redis_client import RedisClient
 
 # Configure logging to see worker output
 logging.basicConfig(

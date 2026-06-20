@@ -5,14 +5,15 @@ from typing import Any, Dict, List, Optional, Set
 import httpx
 from .models import DiscoveredEndpoint
 
+# Attempt to import yaml for stretch goal
 # Attempt to import yaml
 try:
     import yaml
 except ImportError:
     yaml = None
 
+# Set up logging
 logger = logging.getLogger(__name__)
-
 
 class OpenAPIParser:
     """Parses OpenAPI 3.0 or Swagger 2.0 specifications with high resilience."""
@@ -62,6 +63,45 @@ class OpenAPIParser:
                     data = yaml.safe_load(content)
                 except Exception as ye:
                     parser = cls({})
+                    parser.errors_encountered.append(f"Failed to parse {source_name} as JSON or YAML: {e}, {ye}")
+                    return parser
+            else:
+                parser = cls({})
+                parser.errors_encountered.append(f"Failed to parse {source_name} as JSON and YAML support is missing: {e}")
+                return parser
+        return cls(data)
+
+    def _normalize_path(self, path: str) -> str:
+        """
+        Normalizes paths:
+        - Remove duplicate slashes
+        - Strip trailing slashes
+        - Preserve parameters
+        """
+        if not path:
+            return "/"
+
+        # Remove duplicate slashes (e.g., //api///users -> /api/users)
+        normalized = re.sub(r'/+', '/', path)
+
+        # Strip trailing slash unless it's just "/"
+        if len(normalized) > 1 and normalized.endswith('/'):
+            normalized = normalized.rstrip('/')
+
+        if not normalized.startswith('/'):
+            normalized = '/' + normalized
+
+        return normalized
+
+    def _check_auth(self, method_details: Dict[str, Any]) -> bool:
+        """Determines if the endpoint has authentication required."""
+        # Check endpoint-specific security
+        if "security" in method_details:
+            security = method_details["security"]
+            # If security is an empty list [], it means auth is explicitly disabled
+            return isinstance(security, list) and len(security) > 0
+
+        # Check global security
                     parser.errors_encountered.append(
                         f"Failed to parse {source_name} as JSON or YAML: {e}, {ye}"
                     )
@@ -98,6 +138,15 @@ class OpenAPIParser:
         return isinstance(global_security, list) and len(global_security) > 0
 
     def _resolve_ref(self, schema: Any) -> Any:
+        """Resolves internal JSON references ($ref)."""
+        if not isinstance(schema, dict) or "$ref" not in schema:
+            return schema
+
+        ref_path = schema["$ref"]
+        if not ref_path.startswith("#/"):
+            # External refs not supported in this version
+            return schema
+
         if not isinstance(schema, dict) or "$ref" not in schema:
             return schema
         ref_path = schema["$ref"]
@@ -113,15 +162,17 @@ class OpenAPIParser:
             self.errors_encountered.append(f"Could not resolve reference: {ref_path}")
             return schema
 
-    def _extract_body_schema(
-        self, method: str, method_details: Dict[str, Any]
-    ) -> tuple:
+    def _extract_body_schema(self, method: str, method_details: Dict[str, Any]) -> tuple[Optional[Dict[str, Any]], bool]:
+        """Extracts JSON request body schema and whether it is required."""
         schema = None
         required = False
 
+        # OpenAPI 3.x structure
         if "requestBody" in method_details:
             rb = method_details["requestBody"]
+            # Resolve ref for requestBody itself
             rb = self._resolve_ref(rb)
+
             required = rb.get("required", False)
             content = rb.get("content", {})
             if "application/json" in content:
@@ -145,24 +196,33 @@ class OpenAPIParser:
         return schema, required
 
     def _process_parameters(self, method_details: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extracts and processes parameters with fallback logic."""
         params = method_details.get("parameters", [])
         if not isinstance(params, list):
             return []
+
         processed = []
         for param in params:
             param = self._resolve_ref(param)
             if not isinstance(param, dict):
                 continue
+
             p = param.copy()
+            # Parameter Schema Fallback: "Assume type string, Assume not required"
             if "schema" not in p:
                 p["schema"] = {"type": "string"}
+
             if "required" not in p:
                 p["required"] = False
+
             processed.append(p)
         return processed
 
     def parse(self) -> Dict[str, Any]:
-        """Main entry point to extract endpoints. Handles malformed specs gracefully."""
+        """
+        Main entry point to extract endpoints. Handles malformed specs gracefully.
+        Returns a dictionary matching the required output format.
+        """
         if not self.spec:
             logger.warning("Specification is empty or was not loaded correctly.")
             return self._build_result()

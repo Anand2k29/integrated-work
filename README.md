@@ -1,116 +1,266 @@
-<div align="center">
-  
-# 🛡️ Async Execution System
-**Enterprise API Security Testing Orchestration Platform**
+# 🛡️ TrustLayer API Shield — AI-Powered API Security Testing Platform
 
-[![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.110.0-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com)
-[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
-[![Redis](https://img.shields.io/badge/Redis-Queue-red.svg?logo=redis)](https://redis.io/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Async-336791.svg?logo=postgresql)](https://www.postgresql.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis)](https://redis.io)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://docker.com)
 
-A high-scale distributed scan orchestration engine designed for a next-generation API Security Testing Platform. Built to handle concurrent scanning, intelligent retry orchestration, and real-time observability.
-
-</div>
+A production-grade, enterprise-level **API Authorization Security Testing Platform** combining a distributed async scanning engine with a premium Security Operations Center (SOC) UI.
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ System Architecture
 
-The system is designed using a modular, service-oriented architecture splitting high-speed backend task execution from frontend observability.
-
-### 1. Backend Orchestration (`/executor`)
-The central backbone of the scanner, responsible for lifecycle management, task distribution, and resilient error handling.
-- **Async Worker Engine**: Leverages Python `asyncio` and `httpx.AsyncClient` with connection pooling to dispatch non-blocking HTTP requests.
-- **Queue Infrastructure**: Utilizes Redis for standard FIFO queues, Dead-Letter Queues (DLQ), and delayed scheduling via sorted sets.
-- **Retry Orchestration**: Intelligent exponential backoff and jitter for transient failure recovery.
-- **Database Layer**: SQLAlchemy 2.0 (Async) with `asyncpg` for high-throughput persistence into PostgreSQL.
-- **API & Metrics**: FastAPI handles task submission while exposing native Prometheus metrics for system health.
-
-### 2. Observability Dashboard (`/frontend`)
-A real-time operational command center built with Next.js 15.
-- **Offensive-Security Aesthetic**: Dark matte backgrounds (`#020817`), neon green accents, and glassmorphic UI components.
-- **Live Metrics**: Displays active workers, queue depths, and execution throughput.
-- **Component System**: Built on TailwindCSS and `shadcn/ui` with Framer Motion animations.
+```
+┌──────────────────────────────────────────────────────────┐
+│                     Nginx (Port 80)                      │
+│              Reverse Proxy / Load Balancer               │
+└───────────────┬──────────────────────┬───────────────────┘
+                │                      │
+     /api/v1/*  ↓           /  and /*  ↓
+┌─────────────────────┐  ┌─────────────────────────────────┐
+│  FastAPI Backend    │  │   Next.js Frontend              │
+│  Port 8000          │  │   Port 3000                     │
+│  • REST API         │  │   • SOC Dashboard               │
+│  • JWT Analysis     │  │   • Endpoint Discovery UI       │
+│  • Diff Engine      │  │   • JWT Analyzer                │
+│  • Report Service   │  │   • Role Swapper                │
+│  • Prometheus       │  │   • Async Execution Monitor     │
+└────────┬────────────┘  └─────────────────────────────────┘
+         │
+    ┌────┴─────────────────────────────────┐
+    │                                      │
+    ▼                                      ▼
+┌────────────────┐              ┌──────────────────────────┐
+│ PostgreSQL     │              │ Redis Queue (P1–P4)       │
+│ • Scans        │              │ • tasks:default:critical  │
+│ • Tasks        │              │ • tasks:default:high      │
+│ • Responses    │              │ • tasks:default:medium    │
+│ • Workers      │              │ • tasks:default:low       │
+└────────────────┘              └──────────┬───────────────┘
+                                           │
+                              ┌────────────▼──────────────┐
+                              │   WorkerPoolManager        │
+                              │   Auto-scaling 5–100       │
+                              │   workers based on depth   │
+                              └────────────┬──────────────┘
+                                           │
+                              ┌────────────▼──────────────┐
+                              │   WorkerEngine (N×)        │
+                              │   HttpExecutor             │
+                              │   Rate Limiter             │
+                              │   Retry + DLQ logic        │
+                              └───────────────────────────┘
+```
 
 ---
 
-## 🛠️ Technology Stack
+## 🔬 Core Security Modules
 
-| Category | Technologies |
-|---|---|
-| **Backend** | Python 3.12, FastAPI, asyncio, SQLAlchemy (asyncpg), Alembic, Pydantic |
-| **Frontend** | Next.js 15, React 19, TypeScript, TailwindCSS, Framer Motion, Lucide React |
-| **Infrastructure** | Docker, PostgreSQL 15, Redis 7, Prometheus |
+| Module | Description |
+|--------|-------------|
+| **Endpoint Discovery** | Parses OpenAPI/Swagger specs to identify all routes, parameters, and auth requirements |
+| **API Crawler** | Traverses endpoint dependency trees and reconstructs transaction flows |
+| **Mutation Engine** | Node.js-powered fuzzer that mutates IDs, headers, parameters, and JSON bodies |
+| **JWT / Token Analysis** | Decodes tokens, checks algorithm flaws, missing claims, and expiration |
+| **Role / Tenant Swapper** | Generates test cases by swapping JWT contexts across auth-protected endpoints |
+| **Async Execution Engine** | Redis-backed P1–P4 priority queue with auto-scaling worker pool |
+| **Response Diff Engine** | Compares paired responses to detect BOLA/BFLA data leakage |
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quick Start (Local Development)
 
 ### Prerequisites
-- Docker & Docker Compose
-- Node.js 20+ & npm
-- Python 3.12+
 
-### 1. Infrastructure Setup
-Start the PostgreSQL and Redis containers:
+- Python 3.11+
+- Node.js 20+
+- Redis (optional — mock data used if unavailable)
+
+### 1. Clone & Setup Python Backend
+
 ```bash
-docker compose up -d
-```
-
-### 2. Backend Setup
-Initialize the Python environment and run migrations:
-```bash
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
-
-# Install dependencies
+# Install Python dependencies
 pip install -r requirements.txt
 
-# Run Database Migrations
-alembic upgrade head
-
-# Start the API and Worker Engine
-uvicorn executor.api.main:app --reload
+# Initialize the database (SQLite for local dev)
+python -c "
+import asyncio, os
+os.environ['DATABASE_URL'] = 'sqlite+aiosqlite:///./test.db'
+from executor.persistence.database import engine, Base
+async def init():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+asyncio.run(init())
+"
 ```
-*The FastAPI Swagger UI will be available at `http://localhost:8000/docs`.*
 
-### 3. Frontend Setup
-Start the Next.js observability dashboard:
+### 2. Start the FastAPI Backend
+
+```bash
+# Using SQLite (no PostgreSQL required locally)
+DATABASE_URL=sqlite+aiosqlite:///./test.db uvicorn executor.api.main:app --reload --port 8000
+```
+
+API available at: **http://localhost:8000**
+Interactive docs: **http://localhost:8000/docs**
+
+### 3. Start the Next.js Frontend
+
 ```bash
 cd frontend
-
-# Install dependencies (ignoring peer-dependency conflicts for React 19)
-npm install --legacy-peer-deps
-
-# Start the dev server
+npm install
 npm run dev
 ```
-*The Dashboard will be available at `http://localhost:3000`.*
+
+Console available at: **http://localhost:3000**
+
+### 4. (Optional) Start Worker Pool
+
+```bash
+# Requires Redis to be running
+DATABASE_URL=sqlite+aiosqlite:///./test.db python run_worker.py
+```
 
 ---
 
-## 📈 Platform Features
+## 🐳 Production Deployment (Docker Compose)
 
-### Task Orchestration Flow
-1. **Submission**: Discovery Engines (e.g., API Crawler, Mutation Engine) POST tasks to `/api/v1/scans/{scan_id}/tasks`.
-2. **Queuing**: The `QueuePublisher` serializes and pushes the payloads to the Redis `tasks:default` queue.
-3. **Execution**: The `WorkerEngine` safely pulls tasks utilizing concurrency semaphores and dispatches the HTTP requests.
-4. **Resilience**: Failed tasks are pushed to a Redis Sorted Set for exponential backoff retries. Unrecoverable tasks are sent to the DLQ.
-5. **Persistence**: All latency, headers, status codes, and bodies are saved directly to PostgreSQL.
+```bash
+# Copy and configure your environment
+cp .env.example .env
+# Edit .env with your database and Redis credentials
+
+# Start all 6 services
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Scale workers
+docker compose up -d --scale worker=3
+```
+
+Services available:
+- **UI Console**: http://localhost (via Nginx)
+- **API**: http://localhost/api/v1/
+- **Metrics**: http://localhost/metrics
 
 ---
 
-## 🔒 Security & Deployment
+## 🌐 API Endpoints
 
-- **Deployment**: The frontend is fully optimized for **Netlify** or **Vercel** edge deployments (`netlify.toml` included).
-- **Secrets Management**: Configured via Pydantic BaseSettings `.env` integration to prevent hardcoded credentials.
-- **Worker Scalability**: Workers are fully stateless. You can horizontally scale by spinning up multiple instances of the Worker loop across different servers pointing to the same Redis cluster.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/scans` | Create new scan workspace |
+| `GET` | `/api/v1/scans` | List all scans |
+| `POST` | `/api/v1/scans/{id}/discover` | Run endpoint discovery |
+| `GET` | `/api/v1/scans/{id}/progress` | Get scan progress |
+| `GET` | `/api/v1/scans/{id}/tasks` | List all tasks |
+| `GET` | `/api/v1/scans/{id}/report` | Generate TLL-Alpha report |
+| `GET` | `/api/v1/queue/status` | Queue depth per priority |
+| `GET` | `/api/v1/workers/status` | Active worker heartbeats |
+| `GET` | `/api/v1/execution/stats` | Throughput & failure metrics |
+| `POST` | `/api/v1/jwt/analyze` | Analyze JWT token |
+| `POST` | `/api/v1/diff` | Compare two responses |
 
 ---
-<div align="center">
-  <i>Developed by TrustLayer Labs • API Security Intelligence</i>
-</div>
-=======
 
+## 📁 Project Structure
+
+```
+Async Execution System/
+├── executor/                   # Python backend
+│   ├── api/
+│   │   ├── main.py             # FastAPI app entrypoint
+│   │   ├── routes.py           # All REST endpoints
+│   │   └── schemas.py          # Pydantic models
+│   ├── persistence/
+│   │   ├── database.py         # SQLAlchemy async engine
+│   │   └── models.py           # ORM: Scan, Task, Response, Worker
+│   ├── workers/
+│   │   ├── engine.py           # WorkerEngine execution loop
+│   │   ├── heartbeat.py        # Redis heartbeat tracker
+│   │   └── http_executor.py    # Async HTTP request executor
+│   ├── worker_manager/
+│   │   └── manager.py          # Auto-scaling pool manager
+│   ├── queue/
+│   │   ├── publisher.py        # Priority queue publisher
+│   │   └── redis_client.py     # Redis async client
+│   ├── rate_limiter/
+│   │   └── limiter.py          # Token bucket (Redis Lua)
+│   ├── integration/
+│   │   ├── discovery_bridge.py # OpenAPI → TaskSubmit
+│   │   ├── jwt_bridge.py       # JWT Role Swapper bridge
+│   │   └── mutation_bridge.py  # Node.js Mutation Engine
+│   ├── analysis/
+│   │   └── report_service.py   # TLL-Alpha security reporter
+│   └── configs/
+│       └── settings.py         # Environment configuration
+│
+├── frontend/                   # Next.js security console
+│   └── src/
+│       ├── app/
+│       │   ├── page.tsx        # Main router / app shell
+│       │   └── globals.css     # Design tokens
+│       ├── components/
+│       │   ├── LandingPage.tsx     # Hero + features
+│       │   ├── Login.tsx           # Authentication
+│       │   ├── AiAssistant.tsx     # Security copilot
+│       │   ├── DashboardView.tsx   # SOC dashboard
+│       │   ├── DiscoveryView.tsx   # Endpoint discovery
+│       │   ├── CrawlerView.tsx     # API crawler
+│       │   ├── MutationView.tsx    # Fuzzing engine
+│       │   ├── JwtView.tsx         # Token analysis
+│       │   ├── RoleSwapperView.tsx # Auth swapping
+│       │   ├── AsyncExecutionView.tsx # Worker monitor
+│       │   ├── DiffEngineView.tsx  # Response diff
+│       │   ├── ReportsView.tsx     # Security reports
+│       │   ├── HistoryView.tsx     # Scan history
+│       │   ├── SettingsView.tsx    # Configuration
+│       │   ├── UserManagementView.tsx # User RBAC
+│       │   └── ProfileView.tsx     # User profile
+│       └── lib/
+│           ├── api.ts          # Backend API service layer
+│           └── utils.ts        # Tailwind utility helpers
+│
+├── modules_unzipped/           # Security testing engine modules
+│   ├── endpoint_discovery/     # Python OpenAPI parser
+│   ├── Jwt Role Testing/       # Python role swapper
+│   ├── Mutation-engine/        # Node.js fuzzing engine
+│   ├── api-crawler-module/     # Python API crawler
+│   └── TLL-alpha/              # Security analysis & reporting
+│
+├── docker-compose.yml          # Full stack orchestration
+├── Dockerfile.api              # FastAPI backend image
+├── nginx.conf                  # Reverse proxy config
+├── run_worker.py               # Worker pool starter
+├── integration_test.py         # E2E integration test
+└── .env.example                # Environment template
+```
+
+---
+
+## 🔒 Security Architecture
+
+- **JWT Analysis**: Cryptographic algorithm audit, missing claims detection, expiry validation
+- **BOLA Detection**: Object ID mutation with response comparison
+- **BFLA Detection**: Role swap testing — viewer tokens accessing admin endpoints
+- **Priority Queue**: P1 (Critical JWT) → P2 (Role Swap) → P3 (Crawler) → P4 (Fuzzing)
+- **Rate Limiting**: Redis token bucket with Lua script for atomic enforcement
+- **Dead Letter Queue**: Failed tasks after max retries moved to DLQ for analysis
+
+---
+
+## 📊 Metrics & Monitoring
+
+Prometheus metrics exposed at `/metrics`:
+
+- `executor_requests_total` — by status (success/failure/429)
+- `executor_retries_total` — retry attempts across all workers
+- `executor_active_workers` — current live worker count
+- `executor_queue_depth` — per-priority queue depth gauge
+
+---
+
+*Built by the Core Security Engine Team | TrustLayer Labs 2026*

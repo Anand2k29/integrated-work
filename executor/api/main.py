@@ -1,5 +1,7 @@
 import asyncio
 import logging
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,6 +13,7 @@ from prometheus_client import make_asgi_app
 from executor.configs.settings import settings
 from executor.api.routes import router
 from executor.persistence.database import engine
+from executor.task_queue.redis_client import RedisClient
 from executor.queue.redis_client import RedisClient
 
 # Configure Logging
@@ -45,6 +48,8 @@ _cors_origins = settings.cors_origins
 _allow_all = "*" in _cors_origins
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
     allow_origins=_cors_origins,
     allow_credentials=not _allow_all,  # credentials not allowed with wildcard origins
     allow_methods=["*"],
@@ -208,6 +213,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.on_event("startup")
 async def startup_event():
     logger.info("Initializing API and checking Redis status...")
+    # Trigger connection check
+    redis_alive = RedisClient.check_redis_alive()
 
     # Ensure the database schema exists. This is idempotent (only missing tables
     # are created) and makes the backend self-sufficient regardless of how it is
@@ -294,6 +301,9 @@ async def shutdown_event():
 
 @app.get("/health")
 async def health_check():
+    redis_alive = RedisClient.check_redis_alive()
+    return {
+        "status": "ok",
     try:
         redis_alive = RedisClient.check_redis_alive()
     except Exception:

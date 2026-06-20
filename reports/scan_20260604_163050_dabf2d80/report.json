@@ -1,0 +1,26 @@
+{
+  "report_id": "dabf2d80-305c-478a-a18d-e2bbe08f5751",
+  "scan_name": "Test Scan",
+  "target_url": "http://127.0.0.1:8000",
+  "created_at": "2026-06-04T16:30:50.912189",
+  "metadata": {
+    "similarity_threshold": 0.65,
+    "reference_role": "admin",
+    "total_diffs": 0,
+    "anomaly_diffs": 0
+  },
+  "summary": {
+    "total_endpoints": 1,
+    "total_requests": 1,
+    "total_issues": 0,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "info": 0,
+    "duration_seconds": 0.35,
+    "scan_start": "2026-06-04T16:30:50.560669",
+    "scan_end": "2026-06-04T16:30:50.912125"
+  },
+  "issues": []
+}

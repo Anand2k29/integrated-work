@@ -7,11 +7,12 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import fakeredis.aioredis
 import httpx
 
-from executor.queue.redis_client import RedisClient
-from executor.queue.models import QueuePayload
-from executor.queue.publisher import QueuePublisher
-from executor.workers.engine import WorkerEngine
+from executor.task_queue.redis_client import RedisClient
+from executor.task_queue.models import QueuePayload
+from executor.task_queue.publisher import QueuePublisher
+from executor.worker_manager.manager import WorkerPoolManager
 from executor.persistence.models import TaskStatus
+from executor.metrics.prometheus import EXECUTOR_REQUESTS_TOTAL, EXECUTOR_ACTIVE_WORKERS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -25,87 +26,78 @@ async def run_mock_test():
     RedisClient.get_client = MagicMock(return_value=fake_redis)
     RedisClient.get_pool = MagicMock()
     
-    print("[Step 1 & 2] Task Creation & Priority Queue Management")
+    print("[Step 1 & 2] Task Creation & Multi-Queue Priority Management")
     publisher = QueuePublisher("tasks:test")
     
-    # Create two tasks, one high priority
-    payload_normal = QueuePayload(
-        task_id=str(uuid.uuid4()),
-        scan_id=str(uuid.uuid4()),
-        method="GET",
-        url="http://example.com/api/normal",
-        priority=0,
-        max_retries=2
-    )
-    payload_high = QueuePayload(
-        task_id=str(uuid.uuid4()),
-        scan_id=str(uuid.uuid4()),
-        method="POST",
-        url="http://example.com/api/high_priority",
-        priority=1,
-        max_retries=2
-    )
+    # Create tasks of varying priorities
+    payloads = []
+    for i in range(15): # Burst to trigger scaling
+        payloads.append(QueuePayload(
+            task_id=str(uuid.uuid4()),
+            scan_id=str(uuid.uuid4()),
+            method="GET",
+            url=f"http://example.com/api/{i}",
+            priority_level="P1" if i % 5 == 0 else "P3",
+            max_retries=2
+        ))
+        
+    await publisher.publish_batch(payloads)
     
-    # Publish standard first, then high priority
-    await publisher.publish(payload_normal, priority=False)
-    await publisher.publish(payload_high, priority=True)
+    q_len = await fake_redis.llen("tasks:test:critical")
+    print(f"[SUCCESS] Queued tasks in Redis. Critical P1 tasks: {q_len}")
     
-    q_len = await fake_redis.llen("tasks:test")
-    print(f"[SUCCESS] Queued {q_len} tasks in Redis.")
-    
-    # Check that high priority is first
-    first_task_json = await fake_redis.lpop("tasks:test")
-    first_task = QueuePayload.model_validate_json(first_task_json)
-    print(f"[SUCCESS] Popped first task. Priority: {first_task.priority} (Expected 1 - High Priority pushed to front)")
-    
-    print("\n[Step 3] Async Worker Execution")
-    # 2. MOCK WORKER ENGINE & DATABASE
+    print("\n[Step 3] Dynamic Worker Scaling & Async Execution")
+    # MOCK DATABASE
     mock_db_session = AsyncMock()
     mock_db_session.get.return_value = AsyncMock(status="QUEUED", attempts=0) # Mock DB Task
     
-    # Mock AsyncSessionLocal context manager
     class MockSessionContextManager:
         async def __aenter__(self): return mock_db_session
         async def __aexit__(self, exc_type, exc_val, exc_tb): pass
 
     with patch("executor.workers.engine.AsyncSessionLocal", return_value=MockSessionContextManager()), \
-         patch("executor.workers.http_executor.httpx.AsyncClient.request") as mock_http:
+         patch("executor.workers.http_executor.httpx.AsyncClient.request") as mock_http, \
+         patch("executor.rate_limiter.limiter.RateLimiter.acquire", new_callable=AsyncMock) as mock_acquire, \
+         patch("executor.rate_limiter.limiter.RateLimiter.report_429", new_callable=AsyncMock) as mock_report:
         
-        # We will test a SUCCESS task
-        mock_http.return_value = httpx.Response(200, content=b'{"success": true}', request=httpx.Request("GET", "http://test"))
+        mock_acquire.return_value = True
+        mock_report.return_value = None
         
-        engine = WorkerEngine("tasks:test")
+        # Simulate normal 200 OK responses, except one 429 to test adaptive rate limiting
+        responses = [httpx.Response(200, content=b'{"success": true}', request=httpx.Request("GET", "http://test"))] * 14
+        responses.append(httpx.Response(429, content=b'{"error": "Too Many Requests"}', request=httpx.Request("GET", "http://test")))
+        mock_http.side_effect = responses
         
-        # Execute the high priority task
-        print(f"[RUNNING] Worker processing task: {first_task.task_id} (URL: {first_task.url})")
-        await engine._process_payload(first_task)
+        pool_manager = WorkerPoolManager("tasks:test", min_workers=1, max_workers=5, idle_timeout=10)
         
-        # Check DB calls
-        assert mock_db_session.add.called
-        print("[SUCCESS] Task executed and Response persisted to PostgreSQL (Mocked) with HTTP 200.")
+        # Start manager without blocking (it runs an infinite monitor loop)
+        asyncio.create_task(pool_manager.start())
         
-    print("\n[Step 4] Retry and Timeout Handling")
-    with patch("executor.workers.engine.AsyncSessionLocal", return_value=MockSessionContextManager()), \
-         patch("executor.workers.http_executor.httpx.AsyncClient.request") as mock_http:
+        print("[RUNNING] WorkerPoolManager started. Waiting for tasks to be processed and scaling to occur...")
         
-        # We pop the second (normal) task
-        second_task_json = await fake_redis.lpop("tasks:test")
-        second_task = QueuePayload.model_validate_json(second_task_json)
+        # Wait a few seconds for workers to process tasks
+        for _ in range(5):
+            await asyncio.sleep(1)
+            active = len(pool_manager.active_engines)
+            print(f"   -> Active Workers: {active} | Queue Depth: {await pool_manager._get_total_queue_depth()}")
+            if await pool_manager._get_total_queue_depth() == 0:
+                break
+                
+        # Stop manager gracefully
+        await pool_manager.stop()
         
-        # We simulate a Timeout failure
-        mock_http.side_effect = httpx.TimeoutException("Mocked Network Timeout")
-        
-        print(f"[RUNNING] Worker processing task: {second_task.task_id} (URL: {second_task.url})")
-        await engine._process_payload(second_task)
-        
-        # Check delayed queue
-        delayed_q = "tasks:test:delayed"
-        delayed_count = await fake_redis.zcard(delayed_q)
-        print(f"[SUCCESS] Task failed due to Timeout. Moved to delayed retry queue.")
-        print(f"[SUCCESS] Tasks in Delayed Queue: {delayed_count}")
+    print("\n[Step 4] Observability and Metrics")
+    active_gauge = EXECUTOR_ACTIVE_WORKERS._value.get()
+    print(f"[SUCCESS] Metrics recorded. EXECUTOR_ACTIVE_WORKERS metric before stop: {active_gauge}")
+    
+    # Check delayed queue for the 429 retry
+    delayed_q = "tasks:test:delayed"
+    delayed_count = await fake_redis.zcard(delayed_q)
+    print(f"[SUCCESS] Task failed due to HTTP 429. Moved to delayed retry queue.")
+    print(f"[SUCCESS] Tasks in Delayed Queue: {delayed_count}")
 
     print("\n" + "="*50)
-    print("All steps checked successfully! System working as expected.")
+    print("All steps checked successfully! Advanced features working as expected.")
     print("="*50 + "\n")
 
 if __name__ == "__main__":

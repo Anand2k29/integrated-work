@@ -1,0 +1,4 @@
+global_limit: 1000
+domains:
+  api.company.com: 100
+  auth.company.com: 50

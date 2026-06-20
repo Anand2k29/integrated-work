@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from executor.queue.redis_client import RedisClient
+from executor.task_queue.redis_client import RedisClient
 from executor.configs.settings import settings
 
 logger = logging.getLogger(__name__)
