@@ -249,7 +249,7 @@ export function LandingPage({ onLaunch, onLogin }: LandingPageProps) {
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
 
         {/* ════════════ NAV ════════════ */}
-        <header style={{ padding: "22px 0", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 50, background: `${bg}ee`, backdropFilter: "blur(12px)", borderBottom: `1px solid ${border}`, margin: "0 -24px", padding: "22px 24px" }}>
+        <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 50, background: `${bg}ee`, backdropFilter: "blur(12px)", borderBottom: `1px solid ${border}`, margin: "0 -24px", padding: "22px 24px" }}>
           {/* Logo */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 800, fontSize: "1.25rem" }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(59,130,246,.12)", border: "1px solid rgba(59,130,246,.25)", display: "flex", alignItems: "center", justifyContent: "center", color: accent }}>
