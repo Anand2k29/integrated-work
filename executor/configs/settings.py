@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # below are only a convenience default for running everything on one machine
     # — inside a deployed container "localhost" refers to the container itself
     # and cannot reach an external database.
-    DATABASE_URL= postgresql+asyncpg://neondb_owner:npg_qPUI9gXbSYN4@ep-ancient-mountain-ao3z0nst.c-2.ap-southeast-1.aws.neon.tech/neondb
+    DATABASE_URL= None
 
     # PostgreSQL credentials (used only when DATABASE_URL is not set)
     POSTGRES_USER: str = "executor_user"
