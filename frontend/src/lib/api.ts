@@ -1,80 +1,15 @@
 // API Layer for the Async Execution System Frontend
 // Production-grade: NO mock data, NO fallbacks. All data comes from the live backend.
-//
-// Requests target the SAME-ORIGIN path `/api/v1`, which Next.js (see
-// next.config.ts `rewrites`) and Nginx (production) transparently proxy to the
-// FastAPI backend. Calling a relative path avoids cross-origin/CORS failures,
-// HTTP/HTTPS mismatches, and broken absolute URLs — the historical cause of the
-// browser's opaque "Failed to fetch" error. The backend location is configured
-// server-side via NEXT_PUBLIC_API_URL (used by the proxy), not in the browser.
-const API_BASE_URL = '/api/v1';
+const apiHost = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "") || "";
+const API_BASE_URL = apiHost
+  ? apiHost.endsWith("/api/v1")
+    ? apiHost
+    : `${apiHost}/api/v1`
+  : "/api/v1";
 
-// ---------------------------------------------------------------------------
-// Auth token storage (localStorage) + helpers
-// ---------------------------------------------------------------------------
-
-const ACCESS_KEY = 'tll_access_token';
-const REFRESH_KEY = 'tll_refresh_token';
-const USER_KEY = 'tll_user';
-
-export interface AuthUser {
-  id: string;
-  email: string;
-  full_name?: string | null;
-  role: string;
-  is_active: boolean;
-  created_at: string;
-}
-
-export interface AuthResponse {
-  success: boolean;
-  message: string;
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-  user: AuthUser;
-}
-
-export const authStore = {
-  getAccess: (): string | null => (typeof window !== 'undefined' ? localStorage.getItem(ACCESS_KEY) : null),
-  getRefresh: (): string | null => (typeof window !== 'undefined' ? localStorage.getItem(REFRESH_KEY) : null),
-  getUser: (): AuthUser | null => {
-    if (typeof window === 'undefined') return null;
-    const raw = localStorage.getItem(USER_KEY);
-    try { return raw ? (JSON.parse(raw) as AuthUser) : null; } catch { return null; }
-  },
-  set: (access: string, refresh: string, user: AuthUser) => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(ACCESS_KEY, access);
-    localStorage.setItem(REFRESH_KEY, refresh);
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
-  },
-  clear: () => {
-    if (typeof window === 'undefined') return;
-    localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
-    localStorage.removeItem(USER_KEY);
-  },
-  isAuthenticated: (): boolean => (typeof window !== 'undefined' && !!localStorage.getItem(ACCESS_KEY)),
-};
-
-// Attempt to refresh the access token using the stored refresh token.
-async function tryRefresh(): Promise<boolean> {
-  const refresh = authStore.getRefresh();
-  if (!refresh) return false;
-  try {
-    const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refresh }),
-    });
-    if (!res.ok) { authStore.clear(); return false; }
-    const data = (await res.json()) as AuthResponse;
-    authStore.set(data.access_token, data.refresh_token, data.user);
-    return true;
-  } catch {
-    return false;
-  }
+function buildApiUrl(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,70 +28,49 @@ export class ApiError extends Error {
   }
 }
 
-// Translate a raw HTTP status into an actionable, human-readable message.
-function describeStatus(status: number, detail: string): string {
-  switch (status) {
-    case 400: return detail || 'Invalid request. Check the data you submitted.';
-    case 401: return 'Authentication required. Provide a valid token or API key.';
-    case 403: return 'Access denied. You are not authorized for this resource.';
-    case 404: return detail || 'Resource not found.';
-    case 408: return 'The target server timed out. Try again.';
-    case 422: return detail || 'Validation failed. Check the request payload.';
-    case 429: return 'Rate limit exceeded. Please slow down and retry.';
-    case 502: return 'Backend server is unreachable. Ensure the FastAPI backend is running on port 8000.';
-    case 503: return detail || 'A backend dependency (database, Redis, or workers) is unavailable.';
-    case 504: return 'The backend gateway timed out while processing the request.';
-    default:
-      if (status >= 500) return detail || 'The backend encountered an internal error.';
-      return detail || `Request failed (HTTP ${status}).`;
-  }
-}
-
-async function apiFetch<T>(url: string, options: RequestInit = {}, retryOn401 = true): Promise<T> {
-  const headers = new Headers(options.headers || {});
-  const token = authStore.getAccess();
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-
+async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, { ...options, headers });
-  } catch (e) {
-    // A thrown fetch (TypeError "Failed to fetch") is a transport-level failure:
-    // the request never reached the backend. Surface an actionable message
-    // instead of the opaque browser default.
-    throw new ApiError(
-      0,
-      'Network connection failed: could not reach the backend API. ' +
-      'Verify the backend server is running and reachable, then retry.'
-    );
-  }
-
-  // Access token expired/invalid: try a one-time silent refresh, then retry.
-  if (res.status === 401 && retryOn401 && authStore.getRefresh() && !url.includes('/auth/')) {
-    const refreshed = await tryRefresh();
-    if (refreshed) return apiFetch<T>(url, options, false);
+    res = await fetch(url, options);
+  } catch (error: any) {
+    const detail = getNetworkErrorDetail(error);
+    throw new ApiError(0, detail);
   }
 
   if (!res.ok) {
     let detail = '';
     try {
       const body = await res.json();
-      detail = body.detail || body.message || '';
-    } catch { /* response had no JSON body */ }
-    throw new ApiError(res.status, describeStatus(res.status, detail));
+      detail = body.detail || body.message || detail;
+    } catch {
+      if (res.status === 204) {
+        return {} as T;
+      }
+    }
+    throw new ApiError(res.status, detail);
   }
 
-  // Some endpoints (e.g. 204 No Content) return an empty body.
-  if (res.status === 204) return undefined as unknown as T;
-  const text = await res.text();
-  if (!text) return undefined as unknown as T;
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    throw new ApiError(res.status, 'Unable to parse the response from the backend.');
+  if (res.status === 204) {
+    return {} as T;
   }
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    return {} as T;
+  }
+
+  return res.json();
+}
+
+function getNetworkErrorDetail(error: any): string {
+  const message = error?.message || String(error) || "Network request failed.";
+  if (message.includes("Failed to fetch")) {
+    return "Unable to connect to the backend. Verify the API server is running, the URL is correct, and CORS is configured.";
+  }
+  if (message.includes("NetworkError")) {
+    return "Network error while contacting the backend. Check your connection and proxy settings.";
+  }
+  return message;
 }
 
 // ---------------------------------------------------------------------------
@@ -388,11 +302,11 @@ export const apiService = {
   // ---- Scans ----
 
   async getScans(): Promise<Scan[]> {
-    return apiFetch<Scan[]>(`${API_BASE_URL}/scans`);
+    return apiFetch<Scan[]>(buildApiUrl('/scans'));
   },
 
   async createScan(name: string, target: string, config: any = {}): Promise<Scan> {
-    return apiFetch<Scan>(`${API_BASE_URL}/scans`, {
+    return apiFetch<Scan>(buildApiUrl('/scans'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, target, config }),
@@ -400,24 +314,24 @@ export const apiService = {
   },
 
   async deleteScan(scanId: string): Promise<void> {
-    const res = await fetch(`${API_BASE_URL}/scans/${scanId}`, { method: 'DELETE' });
+    const res = await fetch(buildApiUrl(`/scans/${scanId}`), { method: 'DELETE' });
     if (!res.ok) {
       throw new ApiError(res.status, 'Failed to delete scan');
     }
   },
 
   async getScanProgress(scanId: string): Promise<ScanProgress> {
-    return apiFetch<ScanProgress>(`${API_BASE_URL}/scans/${scanId}/progress`);
+    return apiFetch<ScanProgress>(buildApiUrl(`/scans/${scanId}/progress`));
   },
 
   async getScanTasks(scanId: string): Promise<Task[]> {
-    return apiFetch<Task[]>(`${API_BASE_URL}/scans/${scanId}/tasks`);
+    return apiFetch<Task[]>(buildApiUrl(`/scans/${scanId}/tasks`));
   },
 
   // ---- Discovery ----
 
   async runDiscovery(scanId: string, specSource: string, baseUrl?: string): Promise<any> {
-    return apiFetch<any>(`${API_BASE_URL}/scans/${scanId}/discover`, {
+    return apiFetch<any>(buildApiUrl(`/scans/${scanId}/discover`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ spec_source: specSource, base_url: baseUrl }),
@@ -427,27 +341,27 @@ export const apiService = {
   // ---- Queue / Workers / Execution ----
 
   async getQueueStatus(): Promise<QueueStatus> {
-    return apiFetch<QueueStatus>(`${API_BASE_URL}/queue/status`);
+    return apiFetch<QueueStatus>(buildApiUrl('/queue/status'));
   },
 
   async getWorkerStatus(): Promise<WorkerStatus> {
-    return apiFetch<WorkerStatus>(`${API_BASE_URL}/workers/status`);
+    return apiFetch<WorkerStatus>(buildApiUrl('/workers/status'));
   },
 
   async getExecutionStats(): Promise<ExecutionStats> {
-    return apiFetch<ExecutionStats>(`${API_BASE_URL}/execution/stats`);
+    return apiFetch<ExecutionStats>(buildApiUrl('/execution/stats'));
   },
 
   // ---- Reports ----
 
   async getReport(scanId: string, format: string = 'json', type: string = 'technical'): Promise<any> {
-    return apiFetch<any>(`${API_BASE_URL}/scans/${scanId}/report?format=${format}&type=${type}`);
+    return apiFetch<any>(buildApiUrl(`/scans/${scanId}/report?format=${encodeURIComponent(format)}&type=${encodeURIComponent(type)}`));
   },
 
   // ---- JWT ----
 
   async analyzeJWT(token: string): Promise<JWTAnalysisResult> {
-    return apiFetch<JWTAnalysisResult>(`${API_BASE_URL}/jwt/analyze`, {
+    return apiFetch<JWTAnalysisResult>(buildApiUrl('/jwt/analyze'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
@@ -457,7 +371,7 @@ export const apiService = {
   // ---- Diff ----
 
   async runDiff(respA: { status_code: number, body: string }, respB: { status_code: number, body: string }): Promise<DiffResult> {
-    return apiFetch<DiffResult>(`${API_BASE_URL}/diff`, {
+    return apiFetch<DiffResult>(buildApiUrl('/diff'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ response_a: respA, response_b: respB }),
@@ -467,31 +381,31 @@ export const apiService = {
   // ---- Dashboard Stats ----
 
   async getDashboardStats(): Promise<DashboardStats> {
-    return apiFetch<DashboardStats>(`${API_BASE_URL}/dashboard/stats`);
+    return apiFetch<DashboardStats>(buildApiUrl('/dashboard/stats'));
   },
 
   // ---- Vulnerabilities ----
 
   async getVulnerabilities(scanId: string): Promise<Vulnerability[]> {
-    return apiFetch<Vulnerability[]>(`${API_BASE_URL}/scans/${scanId}/vulnerabilities`);
+    return apiFetch<Vulnerability[]>(buildApiUrl(`/scans/${scanId}/vulnerabilities`));
   },
 
   // ---- Role Swap Results ----
 
   async getRoleSwapResults(scanId: string): Promise<RoleSwapResult[]> {
-    return apiFetch<RoleSwapResult[]>(`${API_BASE_URL}/scans/${scanId}/role-swaps`);
+    return apiFetch<RoleSwapResult[]>(buildApiUrl(`/scans/${scanId}/role-swaps`));
   },
 
   // ---- Scan Timeline (for live charts) ----
 
   async getScanTimeline(scanId: string): Promise<TimelinePoint[]> {
-    return apiFetch<TimelinePoint[]>(`${API_BASE_URL}/scans/${scanId}/timeline`);
+    return apiFetch<TimelinePoint[]>(buildApiUrl(`/scans/${scanId}/timeline`));
   },
 
   // ---- AI Copilot ----
 
   async askCopilot(scanId: string | undefined, query: string, contextView: string): Promise<CopilotResponse> {
-    return apiFetch<CopilotResponse>(`${API_BASE_URL}/copilot/ask`, {
+    return apiFetch<CopilotResponse>(buildApiUrl('/copilot/ask'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ scan_id: scanId, query, context_view: contextView }),
@@ -501,7 +415,7 @@ export const apiService = {
   // ---- SSE Stream Subscription ----
 
   subscribeScanStream(scanId: string, onMessage: (data: any) => void): EventSource {
-    const source = new EventSource(`${API_BASE_URL}/stream/scan/${scanId}`);
+    const source = new EventSource(buildApiUrl(`/stream/scan/${scanId}`));
     source.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);

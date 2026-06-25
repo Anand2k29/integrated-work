@@ -1,12 +1,11 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List, Optional
 from pydantic import Field
-
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
 
-    GEMINI_API_KEY: str = Field(default="") 
+    GEMINI_API_KEY: str = Field(default="")
     
     # Application
     APP_NAME: str = "Async Execution System"
@@ -23,7 +22,7 @@ class Settings(BaseSettings):
     # below are only a convenience default for running everything on one machine
     # — inside a deployed container "localhost" refers to the container itself
     # and cannot reach an external database.
-    DATABASE_URL: Optional[str] = None
+    DATABASE_URL= None
 
     # PostgreSQL credentials (used only when DATABASE_URL is not set)
     POSTGRES_USER: str = "executor_user"
@@ -48,23 +47,19 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
     REDIS_URL: Optional[str] = None
 
+    # CORS & frontend integration
+    CORS_ORIGINS: Optional[str] = None
+
     def __init__(self, **data):
         super().__init__(**data)
         if self.REDIS_URL is None:
             self.REDIS_URL = f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
-
-    # CORS
-    # Comma-separated list of allowed origins. Use "*" (default) for development.
-    # For production set an explicit list, e.g.:
-    #   CORS_ORIGINS=https://integrated-work.vercel.app,https://www.example.com
-    CORS_ORIGINS: str = "*"
-    # Regex applied in addition to CORS_ORIGINS, so preview deployments work
-    # without enumerating every ephemeral subdomain.
-    CORS_ORIGIN_REGEX: str = r"https://.*\.(netlify\.app|vercel\.app)|http://localhost:\d+"
-
+        
     @property
-    def cors_origins_list(self) -> List[str]:
-        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+    def cors_origins(self) -> List[str]:
+        if not self.CORS_ORIGINS:
+            return ["*"]
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     # Worker Configuration
     WORKER_CONCURRENCY: int = 100

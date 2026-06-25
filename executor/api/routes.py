@@ -63,6 +63,8 @@ async def submit_tasks(scan_id: uuid.UUID, tasks: List[TaskSubmit], db: AsyncSes
             url=t_data.url,
             headers=headers,
             payload=t_data.payload,
+            mutation_strategy=t_data.mutation_strategy,
+            mutation_reason=t_data.mutation_reason,
             status=TaskStatus.QUEUED.value,
             max_retries=t_data.retry_count,
             mutation_strategy=getattr(t_data, "mutation_strategy", None),
@@ -82,6 +84,8 @@ async def submit_tasks(scan_id: uuid.UUID, tasks: List[TaskSubmit], db: AsyncSes
             url=db_task.url,
             headers=db_task.headers,
             payload=db_task.payload,
+            mutation_strategy=db_task.mutation_strategy,
+            mutation_reason=db_task.mutation_reason,
             max_retries=db_task.max_retries,
             priority_level=t_data.priority_level
         )
@@ -101,9 +105,13 @@ async def discover_and_submit(scan_id: uuid.UUID, req: DiscoverRequest, db: Asyn
         raise HTTPException(status_code=404, detail="Scan not found")
         
     base_url = req.base_url or scan.target
-    
+
     # 1. Discover endpoints -> Crawler tasks
-    tasks_with_eps = DiscoveryBridge.generate_tasks_from_spec(req.spec_source, base_url)
+    try:
+        tasks_with_eps = DiscoveryBridge.generate_tasks_from_spec(req.spec_source, base_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     base_tasks = [t[0] for t in tasks_with_eps]
     endpoints_raw = [t[1] for t in tasks_with_eps]
     
