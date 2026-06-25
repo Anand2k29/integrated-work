@@ -304,6 +304,7 @@ async def health_check():
     redis_alive = RedisClient.check_redis_alive()
     return {
         "status": "ok",
+    }
     try:
         redis_alive = RedisClient.check_redis_alive()
     except Exception:
