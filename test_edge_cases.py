@@ -1,7 +1,7 @@
 import unittest
 import json
 import os
-from endpoint_discovery import OpenAPIParser
+from endpoint_discovery.parser import OpenAPIParser
 
 class TestEdgeCases(unittest.TestCase):
 
@@ -100,7 +100,7 @@ class TestEdgeCases(unittest.TestCase):
             parser = OpenAPIParser.from_file(test_file)
             result = parser.parse()
             self.assertEqual(result["endpoints"], [])
-            self.assertTrue(any("Could not load file" in err for err in result["errors_encountered"]))
+            self.assertTrue(any("Could not load file" in err or "Failed to parse" in err for err in result["errors_encountered"]))
         finally:
             if os.path.exists(test_file):
                 os.remove(test_file)

@@ -65,12 +65,12 @@ async def run_test():
         ]
 
         print(f"[*] Submitting {len(tasks)} malicious payloads to the queue...")
-        task_res = await client.post(f"{API_BASE}/scans/{scan_id}/tasks", json=tasks)
+        task_res = await client.post(f"{API_BASE}/scans/{scan_id}/tasks", headers=auth_headers, json=tasks)
         print(f"[+] Tasks submitted: {task_res.json()}")
 
         # 3. Check system metrics
         print("[*] Fetching system metrics...")
-        metrics_res = await client.get(f"{API_BASE}/execution/stats")
+        metrics_res = await client.get(f"{API_BASE}/execution/stats", headers=auth_headers)
         print(f"[+] Metrics: {json.dumps(metrics_res.json(), indent=2)}")
 
 if __name__ == "__main__":
